@@ -1,9 +1,16 @@
 plugins {
     id 'java'
+    id 'application'
 }
 
-sourceCompatibility = 8
-targetCompatibility = 8
+java {
+    sourceCompatibility = 8
+    targetCompatibility = 8
+
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(8)
+    }
+}
 
 project.ext.lwjglVersion = "3.3.6"
 project.ext.lwjgl3awtVersion = "0.1.8"
@@ -36,9 +43,22 @@ dependencies {
 
     implementation "de.javagl:jgltf-model:2.0.3"
     implementation "org.joml:joml:${jomlVersion}"
+    implementation "ch.qos.logback:logback-classic:1.2.13"
+}
+
+application {
+    mainClass = 'com.towergames.towerlib.demo.TowerLibDemo'
+    if (System.getProperty("os.name").toLowerCase().contains("mac")) {
+        jvmArgs '-XstartOnFirstThread'
+    }
 }
 
 jar {
+    manifest {
+        attributes(
+                'Main-Class': 'com.towergames.towerlib.demo.TowerLibDemo'
+        )
+    }
     from {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
