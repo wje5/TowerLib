@@ -3,21 +3,21 @@ package com.towergames.towerlib;
 import org.joml.Vector4f;
 import org.joml.Vector4i;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.opengl.GL;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL20;
-import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.*;
 
-import java.util.Stack;
+import java.util.*;
 
 public class GLHandler {
     private final TowerGame game;
+    private Map<String, Integer> shaders = new HashMap<>();
     private Stack<GLState> stack;
+    public final Program pos;
 
     public GLHandler(TowerGame game) {
         this.game = game;
         stack = new Stack<>();
         stack.push(new GLState());
+        pos = createProgram("shaders/pos.vs", "shaders/uColor.fs");
     }
 
     public GLState getState() {
@@ -75,9 +75,140 @@ public class GLHandler {
         }
     }
 
+    public Program createProgram(String... shaderPaths) {
+        return new Program(shaderPaths);
+    }
+
+    public VAO createVAO() {
+        return new VAO();
+    }
+
+    public class Program {
+        private int id;
+
+        private Program(String... shaderPaths) {
+            int[] shaderIDs = new int[shaderPaths.length];
+            for (int i = 0; i < shaderPaths.length; i++) {
+                String path = shaderPaths[i];
+                if (shaders.containsKey(path)) {
+                    shaderIDs[i] = shaders.get(path);
+                    continue;
+                }
+                int type = 0;
+                if (path.endsWith(".vs")) {
+                    type = GL20.GL_VERTEX_SHADER;
+                } else if (path.endsWith(".fs")) {
+                    type = GL20.GL_FRAGMENT_SHADER;
+                } else if (path.endsWith(".gs")) {
+                    type = GL32.GL_GEOMETRY_SHADER;
+                } else {
+                    throw new RuntimeException("Unrecognized shader suffix: " + path);
+                }
+                shaderIDs[i] = GL20.glCreateShader(type);
+                GL20.glShaderSource(shaderIDs[i], TowerUtil.readAll(path));
+                GL20.glCompileShader(shaderIDs[i]);
+                if (GL20.glGetShaderi(shaderIDs[i], GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
+                    throw new RuntimeException("Failed to compile shader: " + path + "\n" + GL20.glGetShaderInfoLog(shaderIDs[i]));
+                }
+                shaders.put(path, shaderIDs[i]);
+            }
+            id = GL20.glCreateProgram();
+            for (int shader : shaderIDs) {
+                GL20.glAttachShader(id, shader);
+            }
+            GL20.glLinkProgram(id);
+            if (GL20.glGetProgrami(id, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
+                throw new RuntimeException("Failed to link program: " + Arrays.toString(shaderPaths) + "\n" + GL20.glGetProgramInfoLog(id));
+            }
+            game.getLogger().debug("Program linked: {}", Arrays.toString(shaderPaths));
+        }
+
+        public void use() {
+            getState().program(id);
+        }
+
+        //TODO uniforms
+    }
+
+    public class VAO {
+        private int vao, vbo, vboDataCount, ebo, eboDataCount;
+        private int[] attribSize = new int[16];
+
+        private VAO() {
+            getState().vao(vao = GL30.glGenVertexArrays(), 0).vbo(vbo = GL15.glGenBuffers());
+        }
+
+        public VAO vboData(float[] data, int type) {
+            getState().vao(vao, ebo).vbo(vbo);
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, data, type);
+            vboDataCount = data.length;
+            return this;
+        }
+
+        public VAO vboData(float[] data) {
+            return this.vboData(data, GL15.GL_STATIC_DRAW);
+        }
+
+        public VAO vertexAttrib(int index, int size, int type, boolean normalized, int stride, long pointer) {
+            getState().vao(vao, ebo).vbo(vbo);
+            GL20.glVertexAttribPointer(index, size, type, normalized, stride, pointer);
+            GL20.glEnableVertexAttribArray(index);
+            attribSize[index] = size;
+            return this;
+        }
+
+        public VAO vertexAttrib(int index, int size, int type, int stride, long pointer) {
+            return vertexAttrib(index, size, type, false, stride, pointer);
+        }
+
+        public VAO vertexAttrib(int index, int size, int stride, long pointer) {
+            return vertexAttrib(index, size, GL11.GL_FLOAT, stride, pointer);
+        }
+
+        public VAO eboData(int[] data, int type) {
+            getState().vao(vao, ebo);
+            if (ebo == 0) {
+                getState().ebo(ebo = GL15.glGenBuffers());
+            }
+            GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, data, type);
+            eboDataCount = data.length;
+            return this;
+        }
+
+        public VAO eboData(int[] data) {
+            return eboData(data, GL15.GL_STATIC_DRAW);
+        }
+
+        public void drawElements(int mode, int count) {
+            getState().vao(vao, ebo);
+            GL11.glDrawElements(mode, count, GL11.GL_UNSIGNED_INT, 0);
+        }
+
+        public void drawElements(int mode) {
+            drawElements(mode, eboDataCount);
+        }
+
+        public void drawElements() {
+            drawElements(GL11.GL_TRIANGLES);
+        }
+
+        public void drawArrays(int mode, int first, int count) {
+            getState().vao(vao, ebo);
+            GL11.glDrawArrays(mode, first, count);
+        }
+
+        public void drawArrays(int mode, int count) {
+            drawArrays(mode, 0, count);
+        }
+
+        public void drawArrays(int mode) {
+            drawArrays(mode, vboDataCount / Arrays.stream(attribSize).sum());
+        }
+    }
+
     public static class GLState {
         private boolean cullFront, cullFace, depthTest;
-        private int depthFunc,program;
+        private int depthFunc, program, vao, vbo, ebo;
         private Vector4f clearColor = new Vector4f();
         private Vector4i viewport = new Vector4i();
 
@@ -163,11 +294,36 @@ public class GLHandler {
             return this;
         }
 
-        public GLState program(int program){
-            if(this.program != program){
+        public GLState program(int program) {
+            if (this.program != program) {
                 GL20.glUseProgram(program);
             }
             this.program = program;
+            return this;
+        }
+
+        public GLState vao(int vao, int ebo) {
+            if (this.vao != vao) {
+                GL30.glBindVertexArray(vao);
+            }
+            this.vao = vao;
+            this.ebo = ebo;
+            return this;
+        }
+
+        public GLState vbo(int vbo) {
+            if (this.vbo != vbo) {
+                GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
+            }
+            this.vbo = vbo;
+            return this;
+        }
+
+        public GLState ebo(int ebo) {
+            if (this.ebo != ebo) {
+                GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
+            }
+            this.ebo = ebo;
             return this;
         }
     }

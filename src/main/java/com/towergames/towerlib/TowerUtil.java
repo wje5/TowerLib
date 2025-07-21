@@ -1,7 +1,6 @@
 package com.towergames.towerlib;
 
 import org.joml.Vector4f;
-import org.slf4j.Logger;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -10,12 +9,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 
 public class TowerUtil {
-    private static Logger logger;
-
-    public static void setLogger(Logger logger) {
-        TowerUtil.logger = logger;
-    }
-
     public static Vector4f rgba(int hexColor) {
         int alpha = (hexColor >> 24) & 0xFF;
         int red = (hexColor >> 16) & 0xFF;
@@ -38,8 +31,7 @@ public class TowerUtil {
                 source.append(s).append('\n');
             }
         } catch (IOException e) {
-            logger.error("Failed to read file " + path + ": {}", e);
-            return null;
+            throw new RuntimeException("Failed to read file " + path + ": ", e);
         }
         return source.toString();
     }

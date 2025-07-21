@@ -9,7 +9,6 @@ public class TowerGame {
     private Logger logger = LoggerFactory.getLogger(TowerGame.class);
     private WindowHandler windowHandler;
     private GLHandler glHandler;
-    private ShaderManager shaderManager;
     private KeyBindingManager keyBindingManager;
 
     protected void run() {
@@ -26,7 +25,6 @@ public class TowerGame {
 
     protected void init() {
         windowHandler.createWindow();
-        shaderManager = new ShaderManager(this);
     }
 
     protected void postInit() {
@@ -70,10 +68,6 @@ public class TowerGame {
 
     public GLHandler getGlHandler() {
         return glHandler;
-    }
-
-    public ShaderManager getShaderManager() {
-        return shaderManager;
     }
 
     public KeyBindingManager getKeyBindingManager() {

@@ -28,7 +28,7 @@ public class WindowHandler {
         game.getLogger().info("Start to creating window...");
         GLFWErrorCallback.createPrint(System.err).set();
         if (!GLFW.glfwInit()) {
-            game.getLogger().error("Failed to initialize GLFW");
+            throw new RuntimeException("Failed to initialize GLFW");
         }
         GLFW.glfwDefaultWindowHints();
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -47,7 +47,7 @@ public class WindowHandler {
             window = GLFW.glfwCreateWindow(windowWidthDefault, windowHeightDefault, title, 0, 0);
         }
         if (window == 0) {
-            game.getLogger().error("Failed to create GLFW window");
+            throw new RuntimeException("Failed to create GLFW window");
         }
         GLFW.glfwMakeContextCurrent(window);
         GLFW.glfwSetFramebufferSizeCallback(window, (window, width, height) -> {

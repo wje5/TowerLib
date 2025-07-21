@@ -46,7 +46,7 @@ public class TowerLibDemo extends TowerGame {
         gl.clearDepth();
 
 
-        gl.getState().program(game.getShaderManager().pos);
+        gl.pos.use();
         gl.swapBuffer();
         game.getGlHandler().checkError();
     }
