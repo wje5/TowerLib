@@ -1,7 +1,6 @@
 package com.towergames.towerlib;
 
-import org.joml.Vector4f;
-import org.joml.Vector4i;
+import org.joml.*;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.*;
 
@@ -85,6 +84,8 @@ public class GLHandler {
 
     public class Program {
         private int id;
+        private Map<String, Integer> uniformLocations = new HashMap<>();
+        private Map<String, Object> uniforms = new HashMap<>();
 
         private Program(String... shaderPaths) {
             int[] shaderIDs = new int[shaderPaths.length];
@@ -123,11 +124,171 @@ public class GLHandler {
             game.getLogger().debug("Program linked: {}", Arrays.toString(shaderPaths));
         }
 
-        public void use() {
-            getState().program(id);
+        public int getUniformLocation(String name) {
+            Integer location = uniformLocations.get(name);
+            if (location != null) {
+                return location;
+            }
+            location = GL20.glGetUniformLocation(id, name);
+            uniformLocations.put(name, location);
+            return location;
         }
 
-        //TODO uniforms
+        public Program uniform(String name, int value) {
+            Object o = uniforms.put(name, value);
+            use();
+            if (!Integer.valueOf(value).equals(o)) {
+                GL20.glUniform1i(getUniformLocation(name), value);
+            }
+            return this;
+        }
+
+        public Program uniform(String name, boolean flag) {
+            return uniform(name, flag ? 1 : 0);
+        }
+
+        public Program uniform(String name, float value) {
+            Object o = uniforms.put(name, value);
+            use();
+            if (!Float.valueOf(value).equals(o)) {
+                GL20.glUniform1f(getUniformLocation(name), value);
+            }
+            return this;
+        }
+
+        public Program uniform1f(String name, float... values) {
+            if (values.length == 1) {
+                return uniform(name, values[0]);
+            }
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniform1fv(getUniformLocation(name), values);
+            }
+            return this;
+        }
+
+        public Program uniform2f(String name, float... values) {
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniform2fv(getUniformLocation(name), values);
+            }
+            return this;
+        }
+
+        public Program uniform(String name, Vector2f v) {
+            return uniform2f(name, v.x, v.y);
+        }
+
+        public Program uniform3f(String name, float... values) {
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniform3fv(getUniformLocation(name), values);
+            }
+            return this;
+        }
+
+        public Program uniform(String name, Vector3f v) {
+            return uniform3f(name, v.x, v.y, v.z);
+        }
+
+        public Program uniform4f(String name, float... values) {
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniform4fv(getUniformLocation(name), values);
+            }
+            return this;
+        }
+
+        public Program uniform(String name, Vector4f v) {
+            return uniform4f(name, v.x, v.y, v.z, v.w);
+        }
+
+        public Program uniformMat2(String name, float... values) {
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniformMatrix2fv(getUniformLocation(name), false, values);
+            }
+            return this;
+        }
+
+        public Program uniform(String name, Matrix2f v) {
+            return uniformMat2(name, v.m00, v.m01, v.m10, v.m11);
+        }
+
+        public Program uniformMat3(String name, float... values) {
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniformMatrix3fv(getUniformLocation(name), false, values);
+            }
+            return this;
+        }
+
+        public Program uniform(String name, Matrix3f v) {
+            return uniformMat3(name, v.m00, v.m01, v.m02, v.m10, v.m11, v.m12, v.m20, v.m21, v.m22);
+        }
+
+        public Program uniformMat4(String name, float... values) {
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniformMatrix4fv(getUniformLocation(name), false, values);
+            }
+            return this;
+        }
+
+        public Program uniform(String name, Matrix4f v) {
+            return uniformMat4(name, v.get(new float[16]));
+        }
+
+        public Program uniform1i(String name, int... values) {
+            if (values.length == 1) {
+                return uniform(name, values[0]);
+            }
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniform1iv(getUniformLocation(name), values);
+            }
+            return this;
+        }
+
+        public Program uniform2i(String name, int... values) {
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniform2iv(getUniformLocation(name), values);
+            }
+            return this;
+        }
+
+        public Program uniform3i(String name, int... values) {
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniform3iv(getUniformLocation(name), values);
+            }
+            return this;
+        }
+
+        public Program uniform4i(String name, int... values) {
+            Object o = uniforms.put(name, values);
+            use();
+            if (!values.equals(o)) {
+                GL20.glUniform4iv(getUniformLocation(name), values);
+            }
+            return this;
+        }
+
+        public Program use() {
+            getState().program(id);
+            return this;
+        }
     }
 
     public class VAO {
