@@ -11,12 +11,15 @@ public class GLHandler {
     private Map<String, Integer> shaders = new HashMap<>();
     private Stack<GLState> stack;
     public final Program pos;
+    private VAO vaoRect;
 
     public GLHandler(TowerGame game) {
         this.game = game;
         stack = new Stack<>();
         stack.push(new GLState());
         pos = createProgram("shaders/pos.vs", "shaders/uColor.fs");
+        vaoRect = createVAO().vboData(new float[]{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f})
+                .vertexAttrib(0, 3, 0, 0).eboData(new int[]{0, 2, 1, 2, 3, 1});
     }
 
     public GLState getState() {
@@ -80,6 +83,17 @@ public class GLHandler {
 
     public VAO createVAO() {
         return new VAO();
+    }
+
+    public void drawRect2D(float x, float y, float width, float height, Vector4f color) {
+        pushStack();
+        WindowHandler window = game.getWindowHandler();
+        pos.uniform("uColor", color);
+        getState().depthTest(false)
+                .model(new Matrix4f().translate(x, y, 0.0f).scale(width, height, 1.0f)).view(new Matrix4f())
+                .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
+        vaoRect.drawElements();
+        popStack();
     }
 
     public class Program {
@@ -162,7 +176,7 @@ public class GLHandler {
             }
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (float[]) o)) {
                 GL20.glUniform1fv(getUniformLocation(name), values);
             }
             return this;
@@ -171,7 +185,7 @@ public class GLHandler {
         public Program uniform2f(String name, float... values) {
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (float[]) o)) {
                 GL20.glUniform2fv(getUniformLocation(name), values);
             }
             return this;
@@ -184,7 +198,7 @@ public class GLHandler {
         public Program uniform3f(String name, float... values) {
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (float[]) o)) {
                 GL20.glUniform3fv(getUniformLocation(name), values);
             }
             return this;
@@ -197,7 +211,7 @@ public class GLHandler {
         public Program uniform4f(String name, float... values) {
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (float[]) o)) {
                 GL20.glUniform4fv(getUniformLocation(name), values);
             }
             return this;
@@ -210,7 +224,7 @@ public class GLHandler {
         public Program uniformMat2(String name, float... values) {
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (float[]) o)) {
                 GL20.glUniformMatrix2fv(getUniformLocation(name), false, values);
             }
             return this;
@@ -223,7 +237,7 @@ public class GLHandler {
         public Program uniformMat3(String name, float... values) {
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (float[]) o)) {
                 GL20.glUniformMatrix3fv(getUniformLocation(name), false, values);
             }
             return this;
@@ -236,7 +250,7 @@ public class GLHandler {
         public Program uniformMat4(String name, float... values) {
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (float[]) o)) {
                 GL20.glUniformMatrix4fv(getUniformLocation(name), false, values);
             }
             return this;
@@ -252,7 +266,7 @@ public class GLHandler {
             }
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (int[]) o)) {
                 GL20.glUniform1iv(getUniformLocation(name), values);
             }
             return this;
@@ -261,7 +275,7 @@ public class GLHandler {
         public Program uniform2i(String name, int... values) {
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (int[]) o)) {
                 GL20.glUniform2iv(getUniformLocation(name), values);
             }
             return this;
@@ -270,7 +284,7 @@ public class GLHandler {
         public Program uniform3i(String name, int... values) {
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (int[]) o)) {
                 GL20.glUniform3iv(getUniformLocation(name), values);
             }
             return this;
@@ -279,14 +293,14 @@ public class GLHandler {
         public Program uniform4i(String name, int... values) {
             Object o = uniforms.put(name, values);
             use();
-            if (!values.equals(o)) {
+            if (!Arrays.equals(values, (int[]) o)) {
                 GL20.glUniform4iv(getUniformLocation(name), values);
             }
             return this;
         }
 
         public Program use() {
-            getState().program(id);
+            getState().program(this);
             return this;
         }
     }
@@ -369,12 +383,16 @@ public class GLHandler {
 
     public static class GLState {
         private boolean cullFront, cullFace, depthTest;
-        private int depthFunc, program, vao, vbo, ebo;
+        private int depthFunc, vao, vbo, ebo;
         private Vector4f clearColor = new Vector4f();
         private Vector4i viewport = new Vector4i();
+        private Program program;
+        public Matrix4f model, view, projection;
 
         public GLState() {
-
+            model = new Matrix4f();
+            view = new Matrix4f();
+            projection = new Matrix4f();
         }
 
         public GLState(GLState state) {
@@ -384,6 +402,9 @@ public class GLHandler {
             depthFunc = state.depthFunc;
             clearColor = state.clearColor;
             viewport = state.viewport;
+            model = new Matrix4f(state.model);
+            view = new Matrix4f(state.view);
+            projection = new Matrix4f(state.projection);
         }
 
         public void applyState(GLState state) {
@@ -393,6 +414,10 @@ public class GLHandler {
             depthFunc(state.depthFunc);
             clearColor(state.clearColor);
             viewport(state.viewport);
+            model = new Matrix4f(state.model);
+            view = new Matrix4f(state.view);
+            projection = new Matrix4f(state.projection);
+            applyMVP();
         }
 
         public GLState cullFront(boolean cullFront) {
@@ -455,12 +480,31 @@ public class GLHandler {
             return this;
         }
 
-        public GLState program(int program) {
+        public GLState program(Program program) {
             if (this.program != program) {
-                GL20.glUseProgram(program);
+                GL20.glUseProgram(program.id);
             }
             this.program = program;
             return this;
+        }
+
+        public GLState model(Matrix4f model) {
+            this.model = model;
+            return this;
+        }
+
+        public GLState view(Matrix4f view) {
+            this.view = view;
+            return this;
+        }
+
+        public GLState projection(Matrix4f projection) {
+            this.projection = projection;
+            return this;
+        }
+
+        public void applyMVP() {
+            program.uniform("uModel", model).uniform("uView", view).uniform("uProjection", projection);
         }
 
         public GLState vao(int vao, int ebo) {

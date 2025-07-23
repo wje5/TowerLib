@@ -45,6 +45,8 @@ public class WindowHandler {
         } else {
             game.getLogger().info("Creating window: {}x{}", windowWidthDefault, windowHeightDefault);
             window = GLFW.glfwCreateWindow(windowWidthDefault, windowHeightDefault, title, 0, 0);
+            windowWidth = windowWidthDefault;
+            windowHeight = windowHeightDefault;
         }
         if (window == 0) {
             throw new RuntimeException("Failed to create GLFW window");
@@ -81,7 +83,6 @@ public class WindowHandler {
         game.getLogger().info("Renderer: {}" , GL11.glGetString(GL11.GL_RENDERER));
         game.getLogger().info("Version: {}" , GL11.glGetString(GL11.GL_VERSION));
         game.getLogger().info("-----------------------------");
-        game.getGlHandler().checkError();
         init = true;
     }
 

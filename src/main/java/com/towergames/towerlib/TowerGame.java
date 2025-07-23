@@ -20,11 +20,11 @@ public class TowerGame {
 
     protected void preInit() {
         windowHandler = new WindowHandler(this);
-        glHandler = new GLHandler(this);
     }
 
     protected void init() {
         windowHandler.createWindow();
+        glHandler = new GLHandler(this);
     }
 
     protected void postInit() {

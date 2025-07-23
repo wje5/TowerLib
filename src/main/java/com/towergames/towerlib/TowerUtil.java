@@ -9,7 +9,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 
 public class TowerUtil {
-    public static Vector4f rgba(int hexColor) {
+    public static Vector4f color(int hexColor) {
         int alpha = (hexColor >> 24) & 0xFF;
         int red = (hexColor >> 16) & 0xFF;
         int green = (hexColor >> 8) & 0xFF;
