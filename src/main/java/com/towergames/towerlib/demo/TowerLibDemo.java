@@ -5,12 +5,21 @@ import org.lwjgl.glfw.GLFW;
 
 public class TowerLibDemo extends TowerGame {
     private static TowerLibDemo game;
+    private FontManager.Font testFont;
+    private GLHandler.Texture texture;
 
     @Override
     protected void preInit() {
         super.preInit();
         WindowHandler window = getWindowHandler();
         window.setTitle("Tower Lib Demo");
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        testFont = game.getFontManager().loadFont("fonts/NotoSansCJK-Regular.ttc");
+        texture = game.getGlHandler().loadTexture("textures/112923224_p2.jpg", false);
     }
 
     @Override
@@ -37,8 +46,11 @@ public class TowerLibDemo extends TowerGame {
         gl.clearColor();
         gl.clearDepth();
 
-        gl.drawRect2D(0,0,100,100,TowerUtil.color(0xFFABCDEF));
-
+        gl.drawRect2D(0, 0, 100, 100, TowerUtil.color(0xFFABCDEF));
+//        testFont.getTexture().drawRect2D(100, 100);
+        texture.drawRect2D(100,100,100,100,100,100);
+        texture.drawRect2D(150,200,150,200,100,100);
+        texture.drawRect2D(250,0,250,0,600,600);
         gl.swapBuffer();
         game.getGlHandler().checkError();
     }

@@ -27,10 +27,10 @@ dependencies {
     implementation platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
 
     implementation "org.lwjgl:lwjgl"
-//	client "org.lwjgl:lwjgl-freetype"
     implementation "org.lwjgl:lwjgl-glfw"
     implementation "org.lwjgl:lwjgl-opengl"
     implementation "org.lwjgl:lwjgl-stb"
+    implementation "org.lwjgl:lwjgl-freetype"
     implementation "org.lwjgl:lwjgl-tinyfd"
     ['natives-windows-arm64', 'natives-windows', 'natives-windows-x86', 'natives-linux-arm64', 'natives-linux-arm32',
      'natives-linux', 'natives-macos-arm64', 'natives-macos'].each { natives ->
@@ -38,6 +38,7 @@ dependencies {
         implementation "org.lwjgl:lwjgl-glfw::${natives}"
         implementation "org.lwjgl:lwjgl-opengl::${natives}"
         implementation "org.lwjgl:lwjgl-stb::${natives}"
+        implementation "org.lwjgl:lwjgl-freetype::${natives}"
         implementation "org.lwjgl:lwjgl-tinyfd::${natives}"
     }
 

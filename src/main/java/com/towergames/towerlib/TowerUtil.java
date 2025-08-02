@@ -2,11 +2,16 @@ package com.towergames.towerlib;
 
 import org.joml.Vector4f;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
+import java.net.URL;
+import java.nio.Buffer;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
+import java.util.List;
 
 public class TowerUtil {
     public static Vector4f color(int hexColor) {
@@ -21,7 +26,7 @@ public class TowerUtil {
         return new Vector4f(r, g, b, a);
     }
 
-    public static String readAll(String path) {
+    public static String readToString(String path) {
         StringBuilder source = new StringBuilder();
         try (InputStream inputStream = getResourceAsStream(path);
              BufferedReader reader = new BufferedReader(
@@ -36,7 +41,68 @@ public class TowerUtil {
         return source.toString();
     }
 
+    public static byte[] readToBytes(String path) {
+        try (InputStream stream = getResourceAsStream(path)) {
+            ByteArrayOutputStream s = new ByteArrayOutputStream();
+            byte[] data = new byte[4096];
+            int n;
+            while ((n = stream.read(data, 0, data.length)) > -1) {
+                s.write(data, 0, n);
+            }
+            s.flush();
+            return s.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read file " + path + ": ", e);
+        }
+    }
+
+    public static ByteBuffer readToBuffer(String path) {
+        return toDirectBuffer(readToBytes(path));
+    }
+
     public static InputStream getResourceAsStream(String path) {
         return TowerUtil.class.getClassLoader().getResourceAsStream(path);
+    }
+
+    public static URL getResourceUrl(String path) {
+        return TowerUtil.class.getClassLoader().getResource(path);
+    }
+
+    public static String getResourceAbsolutePath(String path) {
+        URL url = getResourceUrl(path);
+        if (System.getProperty("os.name").toLowerCase().contains("windows")) {
+            List<String> l = Arrays.asList(url.getPath().split("/"));
+            return String.join("/", l.subList(1, l.size()));
+        }
+        return url.getPath();
+    }
+
+    public static String getResourceAsTempFile(String path) {
+        InputStream stream = getResourceAsStream(path);
+        String[] a = path.split("\\.");
+        String suffix = a.length > 1 ? "." + a[a.length - 1] : "";
+        try {
+            Path tempFile = Files.createTempFile("temp-", suffix);
+            tempFile.toFile().deleteOnExit();
+            Files.copy(stream, tempFile, StandardCopyOption.REPLACE_EXISTING);
+            return tempFile.toAbsolutePath().toString();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static ByteBuffer toDirectBuffer(byte[] data) {
+        ByteBuffer direct = ByteBuffer.allocateDirect(data.length);
+        direct.put(data);
+        ((Buffer) direct).flip();
+        return direct;
+    }
+
+    public static ByteBuffer toDirectBuffer(ByteBuffer data) {
+        ByteBuffer direct = ByteBuffer.allocateDirect(data.capacity());
+        data.rewind();
+        direct.put(data);
+        ((Buffer) direct).flip();
+        return direct;
     }
 }

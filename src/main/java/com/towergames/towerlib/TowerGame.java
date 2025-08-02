@@ -9,6 +9,7 @@ public class TowerGame {
     private Logger logger = LoggerFactory.getLogger(TowerGame.class);
     private WindowHandler windowHandler;
     private GLHandler glHandler;
+    private FontManager fontManager;
     private KeyBindingManager keyBindingManager;
 
     protected void run() {
@@ -25,6 +26,7 @@ public class TowerGame {
     protected void init() {
         windowHandler.createWindow();
         glHandler = new GLHandler(this);
+        fontManager = new FontManager(this);
     }
 
     protected void postInit() {
@@ -68,6 +70,10 @@ public class TowerGame {
 
     public GLHandler getGlHandler() {
         return glHandler;
+    }
+
+    public FontManager getFontManager() {
+        return fontManager;
     }
 
     public KeyBindingManager getKeyBindingManager() {

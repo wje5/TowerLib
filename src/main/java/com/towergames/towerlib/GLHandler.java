@@ -1,25 +1,33 @@
 package com.towergames.towerlib;
 
+import de.javagl.jgltf.model.image.PixelData;
+import de.javagl.jgltf.model.image.PixelDatas;
 import org.joml.*;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.*;
 
+import java.nio.ByteBuffer;
 import java.util.*;
 
 public class GLHandler {
     private final TowerGame game;
     private Map<String, Integer> shaders = new HashMap<>();
     private Stack<GLState> stack;
-    public final Program pos;
-    private VAO vaoRect;
+    public final Program basic;
+    public final Texture white;
+    private VAO vaoRect, vaoRectDynamicUV;
 
     public GLHandler(TowerGame game) {
         this.game = game;
+        game.getLogger().info("Initializing GLHandler...");
         stack = new Stack<>();
         stack.push(new GLState());
-        pos = createProgram("shaders/pos.vs", "shaders/uColor.fs");
-        vaoRect = createVAO().vboData(new float[]{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f})
-                .vertexAttrib(0, 3, 0, 0).eboData(new int[]{0, 2, 1, 2, 3, 1});
+        basic = createProgram("shaders/basic.vs", "shaders/basic.fs");
+        white = createTexture(false).image(GL11.GL_RGBA, 1, 1, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, TowerUtil.toDirectBuffer(new byte[]{-1, -1, -1, -1}));
+        vaoRect = createVAO().vboData(new float[]{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f})
+                .vertexAttrib(0, 3, 20, 0).vertexAttrib(1, 2, 20, 12).eboData(new int[]{0, 1, 2, 0, 2, 3});
+        vaoRectDynamicUV = createVAO().vboData(new float[]{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f}, GL15.GL_DYNAMIC_DRAW)
+                .vertexAttrib(0, 3, 0, 0).vertexAttrib(1, 2, 0, 48).eboData(new int[]{0, 1, 2, 0, 2, 3});
     }
 
     public GLState getState() {
@@ -31,7 +39,9 @@ public class GLHandler {
     }
 
     public void popStack() {
-        stack.pop().applyState(stack.peek());
+        GLState popState = stack.pop();
+        popState.applyState(stack.peek());
+        stack.peek().activeTexture = popState.activeTexture;
     }
 
     public void clearColor() {
@@ -85,22 +95,113 @@ public class GLHandler {
         return new VAO();
     }
 
+    public Texture createTexture(boolean mipmap) {
+        return new Texture(mipmap);
+    }
+
+    public Texture loadTexture(String path, boolean mipmap) {
+        PixelData data = PixelDatas.create(TowerUtil.readToBuffer(path));
+        getState().unpackAlignment(4);
+        return createTexture(mipmap).image(GL11.GL_RGBA, data.getWidth(), data.getHeight(), GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, data.getPixelsRGBA());
+    }
+
     public void drawRect2D(float x, float y, float width, float height, Vector4f color) {
         pushStack();
         WindowHandler window = game.getWindowHandler();
-        pos.uniform("uColor", color);
+        getState().texture0(white);
+        basic.uniform("uColor", color).uniform("uTexture", 0);
         getState().depthTest(false)
                 .model(new Matrix4f().translate(x, y, 0.0f).scale(width, height, 1.0f)).view(new Matrix4f())
                 .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
-        vaoRect.drawElements();
+        vaoRectDynamicUV.drawElements();
         popStack();
     }
 
+    public class Texture {
+        private final int id;
+        private int width, height;
+
+        private Texture(boolean mipmap) {
+            GLState state = getState();
+            state.texture(state.activeTexture, id = GL11.glGenTextures());
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, mipmap ? GL11.GL_LINEAR_MIPMAP_LINEAR : GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        }
+
+        public Texture image(int internalFormat, int width, int height, int format, int dataType, ByteBuffer data) {
+            GLState state = getState();
+            state.texture(state.activeTexture, id);
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, dataType, data);
+            this.width = width;
+            this.height = height;
+            return this;
+        }
+
+        public Texture subImage(int xOffset, int yOffset, int width, int height, int format, int dataType, ByteBuffer data) {
+            GLState state = getState();
+            state.texture(state.activeTexture, id);
+            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, xOffset, yOffset, width, height, format, dataType, data);
+            return this;
+        }
+
+        public Texture updateMipmap() {
+            GLState state = getState();
+            state.texture(state.activeTexture, id);
+            GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
+            return this;
+        }
+
+        public void drawRect2D(float x, float y, float width, float height, Vector4f color) {
+            pushStack();
+            WindowHandler window = game.getWindowHandler();
+            getState().texture0(this);
+            basic.uniform("uColor", color).uniform("uTexture", 0);
+            getState().depthTest(false)
+                    .model(new Matrix4f().translate(x, y, 0.0f).scale(width, height, 1.0f)).view(new Matrix4f())
+                    .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
+            vaoRect.drawElements();
+            popStack();
+        }
+
+        public void drawRect2D(float x, float y) {
+            drawRect2D(x, y, width, height, new Vector4f(1.0f, 1.0f, 1.0f, 1.0f));
+        }
+
+        public void drawRect2D(float x, float y, float width, float height, float u, float v, float uWidth, float vHeight, Vector4f color) {
+            pushStack();
+            WindowHandler window = game.getWindowHandler();
+            getState().texture0(this);
+            vaoRectDynamicUV.vboSubdata(48, new float[]{u / this.width, v / this.height, u / this.width, (v + vHeight) / this.height,
+                    (u + uWidth) / this.width, (v + vHeight) / this.height, (u + uWidth) / this.width, v / this.height});
+            basic.uniform("uColor", color).uniform("uTexture", 0);
+            getState().depthTest(false)
+                    .model(new Matrix4f().translate(x, y, 0.0f).scale(width, height, 1.0f)).view(new Matrix4f())
+                    .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
+            vaoRectDynamicUV.drawElements();
+            popStack();
+        }
+
+        public void drawRect2D(float x, float y, float u, float v, float uWidth, float vHeight) {
+            drawRect2D(x, y, uWidth, vHeight, u, v, uWidth, vHeight, new Vector4f(1.0f, 1.0f, 1.0f, 1.0f));
+        }
+
+        public int getWidth() {
+            return width;
+        }
+
+        public int getHeight() {
+            return height;
+        }
+    }
+
     public class Program {
-        private int id;
+        private final int id;
         private Map<String, Integer> uniformLocations = new HashMap<>();
         private Map<String, Object> uniforms = new HashMap<>();
 
+        //Warning: uniform operation (except getUniformLocation) will bind program!
         private Program(String... shaderPaths) {
             int[] shaderIDs = new int[shaderPaths.length];
             for (int i = 0; i < shaderPaths.length; i++) {
@@ -120,7 +221,7 @@ public class GLHandler {
                     throw new RuntimeException("Unrecognized shader suffix: " + path);
                 }
                 shaderIDs[i] = GL20.glCreateShader(type);
-                GL20.glShaderSource(shaderIDs[i], TowerUtil.readAll(path));
+                GL20.glShaderSource(shaderIDs[i], TowerUtil.readToString(path));
                 GL20.glCompileShader(shaderIDs[i]);
                 if (GL20.glGetShaderi(shaderIDs[i], GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
                     throw new RuntimeException("Failed to compile shader: " + path + "\n" + GL20.glGetShaderInfoLog(shaderIDs[i]));
@@ -306,9 +407,11 @@ public class GLHandler {
     }
 
     public class VAO {
-        private int vao, vbo, vboDataCount, ebo, eboDataCount;
+        private final int vao;
+        private int vbo, vboDataCount, ebo, eboDataCount;
         private int[] attribSize = new int[16];
 
+        //Warning: Any VAO operation will bind it!
         private VAO() {
             getState().vao(vao = GL30.glGenVertexArrays(), 0).vbo(vbo = GL15.glGenBuffers());
         }
@@ -322,6 +425,12 @@ public class GLHandler {
 
         public VAO vboData(float[] data) {
             return this.vboData(data, GL15.GL_STATIC_DRAW);
+        }
+
+        public VAO vboSubdata(long offset, float[] data) {
+            getState().vao(vao, ebo).vbo(vbo);
+            GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, offset, data);
+            return this;
         }
 
         public VAO vertexAttrib(int index, int size, int type, boolean normalized, int stride, long pointer) {
@@ -381,30 +490,40 @@ public class GLHandler {
         }
     }
 
-    public static class GLState {
+    public class GLState {
         private boolean cullFront, cullFace, depthTest;
-        private int depthFunc, vao, vbo, ebo;
+        private int depthFunc, vao, vbo, ebo, unpackAlignment, activeTexture;
+        private int[] textures;
         private Vector4f clearColor = new Vector4f();
         private Vector4i viewport = new Vector4i();
         private Program program;
         public Matrix4f model, view, projection;
 
-        public GLState() {
+        private GLState() {
             model = new Matrix4f();
             view = new Matrix4f();
             projection = new Matrix4f();
+            unpackAlignment = 4;
+            textures = new int[16];
         }
 
-        public GLState(GLState state) {
+        private GLState(GLState state) {
             cullFront = state.cullFront;
             cullFace = state.cullFace;
             depthTest = state.depthTest;
             depthFunc = state.depthFunc;
             clearColor = state.clearColor;
+            unpackAlignment = state.unpackAlignment;
             viewport = state.viewport;
             model = new Matrix4f(state.model);
             view = new Matrix4f(state.view);
             projection = new Matrix4f(state.projection);
+            program = state.program;
+            vao = state.vao;
+            vbo = state.vbo;
+            ebo = state.ebo;
+            textures = Arrays.copyOf(state.textures, 16);
+            activeTexture = state.activeTexture;
         }
 
         public void applyState(GLState state) {
@@ -413,11 +532,21 @@ public class GLHandler {
             depthTest(state.depthTest);
             depthFunc(state.depthFunc);
             clearColor(state.clearColor);
+            unpackAlignment(state.unpackAlignment);
             viewport(state.viewport);
+            program(state.program);
             model = new Matrix4f(state.model);
             view = new Matrix4f(state.view);
             projection = new Matrix4f(state.projection);
-            applyMVP();
+            if (program != null) {
+                applyMVP();
+            }
+            vao(state.vao, state.ebo);
+            vbo(state.vbo);
+            for (int i = 0; i < 16; i++) {
+                texture(i, state.textures[i]);
+            }
+            //activeTexture is not applied, because it should not be manually controlled.
         }
 
         public GLState cullFront(boolean cullFront) {
@@ -447,16 +576,16 @@ public class GLHandler {
                 } else {
                     GL11.glDisable(GL11.GL_DEPTH_TEST);
                 }
+                this.depthTest = enable;
             }
-            this.depthTest = enable;
             return this;
         }
 
         public GLState depthFunc(int depthFunc) {
             if (this.depthFunc != depthFunc) {
                 GL11.glDepthFunc(depthFunc);
+                this.depthFunc = depthFunc;
             }
-            this.depthFunc = depthFunc;
             return this;
         }
 
@@ -465,6 +594,14 @@ public class GLHandler {
                 GL11.glClearColor(clearColor.x, clearColor.y, clearColor.z, clearColor.w);
             }
             this.clearColor = clearColor;
+            return this;
+        }
+
+        public GLState unpackAlignment(int value) {
+            if (this.unpackAlignment != value) {
+                GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, value);
+                this.unpackAlignment = value;
+            }
             return this;
         }
 
@@ -482,9 +619,9 @@ public class GLHandler {
 
         public GLState program(Program program) {
             if (this.program != program) {
-                GL20.glUseProgram(program.id);
+                GL20.glUseProgram(program == null ? 0 : program.id);
+                this.program = program;
             }
-            this.program = program;
             return this;
         }
 
@@ -510,8 +647,8 @@ public class GLHandler {
         public GLState vao(int vao, int ebo) {
             if (this.vao != vao) {
                 GL30.glBindVertexArray(vao);
+                this.vao = vao;
             }
-            this.vao = vao;
             this.ebo = ebo;
             return this;
         }
@@ -519,17 +656,169 @@ public class GLHandler {
         public GLState vbo(int vbo) {
             if (this.vbo != vbo) {
                 GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
+                this.vbo = vbo;
             }
-            this.vbo = vbo;
             return this;
         }
 
         public GLState ebo(int ebo) {
+            if (vao == 0 & ebo != 0) {
+                GLHandler.this.game.getLogger().warn("Don't bind EBO when vao = 0, that will cause state bug!");
+            }
             if (this.ebo != ebo) {
                 GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
+                this.ebo = ebo;
             }
-            this.ebo = ebo;
             return this;
+        }
+
+        public GLState activeTexture(int index) {
+            if (activeTexture != index) {
+                GL13.glActiveTexture(GL13.GL_TEXTURE0 + index);
+                this.activeTexture = index;
+            }
+            return this;
+        }
+
+        public GLState texture(int index, int textureID) {
+            if (textures[index] != textureID) {
+                activeTexture(index);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureID);
+                this.textures[index] = textureID;
+            }
+            return this;
+        }
+
+        public GLState texture(int index, Texture texture) {
+            return texture(index, texture.id);
+        }
+
+        public GLState texture0(int id) {
+            return texture(0, id);
+        }
+
+        public GLState texture0(Texture texture) {
+            return texture(0, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture1(int id) {
+            return texture(1, id);
+        }
+
+        public GLState texture1(Texture texture) {
+            return texture(1, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture2(int id) {
+            return texture(2, id);
+        }
+
+        public GLState texture2(Texture texture) {
+            return texture(2, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture3(int id) {
+            return texture(3, id);
+        }
+
+        public GLState texture3(Texture texture) {
+            return texture(3, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture4(int id) {
+            return texture(4, id);
+        }
+
+        public GLState texture4(Texture texture) {
+            return texture(4, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture5(int id) {
+            return texture(5, id);
+        }
+
+        public GLState texture5(Texture texture) {
+            return texture(5, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture6(int id) {
+            return texture(6, id);
+        }
+
+        public GLState texture6(Texture texture) {
+            return texture(6, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture7(int id) {
+            return texture(7, id);
+        }
+
+        public GLState texture7(Texture texture) {
+            return texture(7, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture8(int id) {
+            return texture(8, id);
+        }
+
+        public GLState texture8(Texture texture) {
+            return texture(8, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture9(int id) {
+            return texture(9, id);
+        }
+
+        public GLState texture9(Texture texture) {
+            return texture(9, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture10(int id) {
+            return texture(10, id);
+        }
+
+        public GLState texture10(Texture texture) {
+            return texture(10, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture11(int id) {
+            return texture(11, id);
+        }
+
+        public GLState texture11(Texture texture) {
+            return texture(11, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture12(int id) {
+            return texture(12, id);
+        }
+
+        public GLState texture12(Texture texture) {
+            return texture(12, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture13(int id) {
+            return texture(13, id);
+        }
+
+        public GLState texture13(Texture texture) {
+            return texture(13, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture14(int id) {
+            return texture(14, id);
+        }
+
+        public GLState texture14(Texture texture) {
+            return texture(14, texture == null ? 0 : texture.id);
+        }
+
+        public GLState texture15(int id) {
+            return texture(15, id);
+        }
+
+        public GLState texture15(Texture texture) {
+            return texture(15, texture == null ? 0 : texture.id);
         }
     }
 }
