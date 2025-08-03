@@ -1,20 +1,22 @@
 package com.towergames.towerlib;
 
+import org.joml.Matrix4f;
+import org.joml.Vector4f;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL15;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.freetype.FT_Bitmap;
-import org.lwjgl.util.freetype.FT_Face;
-import org.lwjgl.util.freetype.FT_GlyphSlot;
-import org.lwjgl.util.freetype.FreeType;
+import org.lwjgl.util.freetype.*;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.IntStream;
 
 public class FontManager {
     private final TowerGame game;
     private final long lib;
+    private final GLHandler.Program programText;
+    private final GLHandler.VAO vaoText;
 
     public FontManager(TowerGame game) {
         this.game = game;
@@ -27,6 +29,9 @@ public class FontManager {
             }
             lib = pointer.get();
         }
+        GLHandler gl = game.getGlHandler();
+        programText = gl.createProgram("shaders/xyuv.vs", "shaders/alpha.fs");
+        vaoText = gl.createVAO().vertexAttrib(0, 4, 0, 0).bindEBO(gl.ebo10000Rects);
     }
 
     public Font loadFont(String path) {
@@ -40,7 +45,7 @@ public class FontManager {
         private Map<Integer, Map<Character, Char>> map = new HashMap<>();
         private Map<Integer, Integer> xOffsets = new HashMap<>();
         private Map<Integer, Integer> yOffsets = new HashMap<>();
-        private int yPosition;
+        private int yPosition, textureWidth = 2048, textureHeight = 2048;
 
         private Font(String path) {
             this.path = path;
@@ -53,17 +58,18 @@ public class FontManager {
                 }
                 face = FT_Face.create(pointer.get());
                 texture = game.getGlHandler().createTexture(false);
-                texture.image(GL11.GL_RED, 2048, 2048, GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, null);
-                loadChar(' ',48);
-                String text = "render Test渲染测试";
-                for(char c:text.toCharArray()){
-                    game.getLogger().debug(c+"");
-                    loadChar(c,48);
-                }
+                texture.image(GL11.GL_RED, textureWidth, textureHeight, GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, null);
             }
         }
 
-        private void loadChar(char c, int size) {
+        private Char getChar(char c, int size) {
+            if (!map.containsKey(size)) {
+                map.put(size, new HashMap<>());
+            }
+            Map<Character, Char> m = map.get(size);
+            if (m.containsKey(c)) {
+                return m.get(c);
+            }
             int error = FreeType.FT_Set_Pixel_Sizes(face, 0, size);
             if (error != 0) {
                 throw new RuntimeException("Error in set font size: font " + path + ", char " + c + ", error " + error);
@@ -87,29 +93,87 @@ public class FontManager {
             }
             int yOffset = yOffsets.get(height);
             gl.getState().unpackAlignment(1);
-            if(width != 0 || height !=0){
+            if (width != 0 || height != 0) {
                 texture.subImage(xOffset, yOffset, width, height, GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, bitmap.buffer(width * height));
             }
-            xOffsets.put(height,xOffset + width);
-            if (!map.containsKey(size)) {
-                map.put(size, new HashMap<>());
-            }
-            Map<Character, Char> m = map.get(size);
-            m.put(c,new Char(xOffset,yOffset,width,height));
+            xOffsets.put(height, xOffset + width);
+            Char ch = new Char(glyph.bitmap_left(), glyph.bitmap_top(), xOffset, yOffset, width, height, (int) glyph.advance().x());
+            m.put(c, ch);
+            game.getLogger().debug("char {} u{} v{} bearing{}/{} size{}/{}", c, ch.u, ch.v, ch.bearingX, ch.bearingY, ch.width, ch.height);
+            return ch;
+
         }
 
-        public GLHandler.Texture getTexture() {
-            return texture;
+        public float renderText(float x, float y, int size, float lineSpacing, float maxWidth, String... texts) {
+            GLHandler gl = game.getGlHandler();
+            WindowHandler window = game.getWindowHandler();
+            int charCount = Arrays.stream(texts).mapToInt(String::length).sum();
+            float[] data = new float[charCount * 16];
+            float xOffset = 0;
+            float yOffset = size;
+            int i = 0;
+            float textBlockWidth = 0;
+            for (String text : texts) {
+                char[] chars = text.toCharArray();
+                for (char ch : chars) {
+                    Char c = getChar(ch, size);
+                    if (maxWidth > 0 && xOffset + c.bearingX + c.width > maxWidth) {
+                        yOffset += lineSpacing;
+                        xOffset = 0;
+                    }
+                    if (xOffset + c.bearingX + c.width > textBlockWidth) {
+                        textBlockWidth = xOffset + c.bearingX + c.width;
+                    }
+                    data[i * 16] = xOffset + c.bearingX;
+                    data[i * 16 + 1] = yOffset - c.bearingY;
+                    data[i * 16 + 2] = c.u * 1.0f / textureWidth;
+                    data[i * 16 + 3] = c.v * 1.0f / textureHeight;
+
+                    data[i * 16 + 4] = xOffset + c.bearingX;
+                    data[i * 16 + 5] = yOffset - c.bearingY + c.height;
+                    data[i * 16 + 6] = c.u * 1.0f / textureWidth;
+                    data[i * 16 + 7] = (c.v + c.height) * 1.0f / textureHeight;
+
+                    data[i * 16 + 8] = xOffset + c.bearingX + c.width;
+                    data[i * 16 + 9] = yOffset - c.bearingY + c.height;
+                    data[i * 16 + 10] = (c.u + c.width) * 1.0f / textureWidth;
+                    data[i * 16 + 11] = (c.v + c.height) * 1.0f / textureHeight;
+
+                    data[i * 16 + 12] = xOffset + c.bearingX + c.width;
+                    data[i * 16 + 13] = yOffset - c.bearingY;
+                    data[i * 16 + 14] = (c.u + c.width) * 1.0f / textureWidth;
+                    data[i * 16 + 15] = c.v * 1.0f / textureHeight;
+                    xOffset += c.advance * 0.015625f;  // 1/64
+                    i++;
+                }
+                yOffset += lineSpacing;
+                xOffset = 0;
+            }
+            vaoText.vboData(data, GL15.GL_DYNAMIC_DRAW);
+            gl.getState().texture0(texture);
+            programText.uniform("uColor", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)).uniform("uTexture", 0);
+            gl.getState().depthTest(false)
+                    .model(new Matrix4f().translate(x, y, 0.0f)).view(new Matrix4f())
+                    .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
+            vaoText.drawElements(GL11.GL_TRIANGLES, charCount * 6);
+            return textBlockWidth;
+        }
+
+        public float renderText(float x, float y, int size, float maxWidth, String... texts) {
+            return renderText(x, y, size, size, maxWidth, texts);
         }
 
         public class Char {
-            private final int u, v, width, height;
+            private final int bearingX, bearingY, u, v, width, height, advance;
 
-            private Char(int u, int v, int width, int height) {
+            private Char(int bearingX, int bearingY, int u, int v, int width, int height, int advance) {
+                this.bearingX = bearingX;
+                this.bearingY = bearingY;
                 this.u = u;
                 this.v = v;
                 this.width = width;
                 this.height = height;
+                this.advance = advance;
             }
         }
     }

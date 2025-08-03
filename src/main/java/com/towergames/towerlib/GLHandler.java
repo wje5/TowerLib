@@ -13,9 +13,10 @@ public class GLHandler {
     private final TowerGame game;
     private Map<String, Integer> shaders = new HashMap<>();
     private Stack<GLState> stack;
-    public final Program basic;
+    public final int ebo10000Rects;
+    public final Program basic, xyuv;
     public final Texture white;
-    private VAO vaoRect, vaoRectDynamicUV;
+    public final VAO vaoRect, vaoRectDynamicUV;
 
     public GLHandler(TowerGame game) {
         this.game = game;
@@ -23,9 +24,20 @@ public class GLHandler {
         stack = new Stack<>();
         stack.push(new GLState());
         basic = createProgram("shaders/basic.vs", "shaders/basic.fs");
+        xyuv = createProgram("shaders/xyuv.vs", "shaders/basic.fs");
         white = createTexture(false).image(GL11.GL_RGBA, 1, 1, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, TowerUtil.toDirectBuffer(new byte[]{-1, -1, -1, -1}));
-        vaoRect = createVAO().vboData(new float[]{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f})
-                .vertexAttrib(0, 3, 20, 0).vertexAttrib(1, 2, 20, 12).eboData(new int[]{0, 1, 2, 0, 2, 3});
+        int[] data = new int[60000];
+        for (int i = 0; i < 10000; i++) {
+            data[i * 6] = i * 4;
+            data[i * 6 + 1] = i * 4 + 1;
+            data[i * 6 + 2] = i * 4 + 2;
+            data[i * 6 + 3] = i * 4;
+            data[i * 6 + 4] = i * 4 + 2;
+            data[i * 6 + 5] = i * 4 + 3;
+        }
+        createVAO().bindEBO(ebo10000Rects = GL15.glGenBuffers()).eboData(data, GL15.GL_STATIC_DRAW); //For avoid bind ebo to vao 0
+        vaoRect = createVAO().vboData(new float[]{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f})
+                .vertexAttrib(0, 3, 0, 0).vertexAttrib(1, 2, 0, 48).eboData(new int[]{0, 1, 2, 0, 2, 3});
         vaoRectDynamicUV = createVAO().vboData(new float[]{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f}, GL15.GL_DYNAMIC_DRAW)
                 .vertexAttrib(0, 3, 0, 0).vertexAttrib(1, 2, 0, 48).eboData(new int[]{0, 1, 2, 0, 2, 3});
     }
@@ -106,15 +118,13 @@ public class GLHandler {
     }
 
     public void drawRect2D(float x, float y, float width, float height, Vector4f color) {
-        pushStack();
         WindowHandler window = game.getWindowHandler();
         getState().texture0(white);
         basic.uniform("uColor", color).uniform("uTexture", 0);
         getState().depthTest(false)
                 .model(new Matrix4f().translate(x, y, 0.0f).scale(width, height, 1.0f)).view(new Matrix4f())
                 .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
-        vaoRectDynamicUV.drawElements();
-        popStack();
+        vaoRect.drawElements();
     }
 
     public class Texture {
@@ -154,7 +164,6 @@ public class GLHandler {
         }
 
         public void drawRect2D(float x, float y, float width, float height, Vector4f color) {
-            pushStack();
             WindowHandler window = game.getWindowHandler();
             getState().texture0(this);
             basic.uniform("uColor", color).uniform("uTexture", 0);
@@ -162,7 +171,6 @@ public class GLHandler {
                     .model(new Matrix4f().translate(x, y, 0.0f).scale(width, height, 1.0f)).view(new Matrix4f())
                     .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
             vaoRect.drawElements();
-            popStack();
         }
 
         public void drawRect2D(float x, float y) {
@@ -170,17 +178,15 @@ public class GLHandler {
         }
 
         public void drawRect2D(float x, float y, float width, float height, float u, float v, float uWidth, float vHeight, Vector4f color) {
-            pushStack();
             WindowHandler window = game.getWindowHandler();
-            getState().texture0(this);
             vaoRectDynamicUV.vboSubdata(48, new float[]{u / this.width, v / this.height, u / this.width, (v + vHeight) / this.height,
                     (u + uWidth) / this.width, (v + vHeight) / this.height, (u + uWidth) / this.width, v / this.height});
+            getState().texture0(this);
             basic.uniform("uColor", color).uniform("uTexture", 0);
             getState().depthTest(false)
                     .model(new Matrix4f().translate(x, y, 0.0f).scale(width, height, 1.0f)).view(new Matrix4f())
                     .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
             vaoRectDynamicUV.drawElements();
-            popStack();
         }
 
         public void drawRect2D(float x, float y, float u, float v, float uWidth, float vHeight) {
@@ -463,6 +469,15 @@ public class GLHandler {
             return eboData(data, GL15.GL_STATIC_DRAW);
         }
 
+        public VAO bindEBO(int id) {
+            if (ebo != 0) {
+                throw new RuntimeException("Don't bindEBO if eboData be called, old EBO leaking!");
+            }
+            getState().vao(vao, 0).ebo(ebo = id);
+            getState();
+            return this;
+        }
+
         public void drawElements(int mode, int count) {
             getState().vao(vao, ebo);
             GL11.glDrawElements(mode, count, GL11.GL_UNSIGNED_INT, 0);
@@ -491,8 +506,8 @@ public class GLHandler {
     }
 
     public class GLState {
-        private boolean cullFront, cullFace, depthTest;
-        private int depthFunc, vao, vbo, ebo, unpackAlignment, activeTexture;
+        private boolean cullFront, cullFace, depthTest, blend;
+        private int depthFunc, vao, vbo, ebo, unpackAlignment, activeTexture, blendSrcFactor = GL11.GL_ONE, blendDstFactor = GL11.GL_ZERO;
         private int[] textures;
         private Vector4f clearColor = new Vector4f();
         private Vector4i viewport = new Vector4i();
@@ -512,6 +527,9 @@ public class GLHandler {
             cullFace = state.cullFace;
             depthTest = state.depthTest;
             depthFunc = state.depthFunc;
+            blend = state.blend;
+            blendSrcFactor = state.blendSrcFactor;
+            blendDstFactor = state.blendDstFactor;
             clearColor = state.clearColor;
             unpackAlignment = state.unpackAlignment;
             viewport = state.viewport;
@@ -531,6 +549,8 @@ public class GLHandler {
             cullFace(state.cullFace);
             depthTest(state.depthTest);
             depthFunc(state.depthFunc);
+            blend(state.blend);
+            blendFunc(state.blendSrcFactor, state.blendDstFactor);
             clearColor(state.clearColor);
             unpackAlignment(state.unpackAlignment);
             viewport(state.viewport);
@@ -585,6 +605,27 @@ public class GLHandler {
             if (this.depthFunc != depthFunc) {
                 GL11.glDepthFunc(depthFunc);
                 this.depthFunc = depthFunc;
+            }
+            return this;
+        }
+
+        public GLState blend(boolean enable) {
+            if (this.blend != enable) {
+                if (enable) {
+                    GL11.glEnable(GL11.GL_BLEND);
+                } else {
+                    GL11.glDisable(GL11.GL_BLEND);
+                }
+                this.blend = enable;
+            }
+            return this;
+        }
+
+        public GLState blendFunc(int srcFactor, int dstFactor) {
+            if (!(this.blendSrcFactor == srcFactor && this.blendDstFactor == dstFactor)) {
+                GL11.glBlendFunc(srcFactor, dstFactor);
+                this.blendSrcFactor = srcFactor;
+                this.blendDstFactor = dstFactor;
             }
             return this;
         }
@@ -663,7 +704,7 @@ public class GLHandler {
 
         public GLState ebo(int ebo) {
             if (vao == 0 & ebo != 0) {
-                GLHandler.this.game.getLogger().warn("Don't bind EBO when vao = 0, that will cause state bug!");
+                throw new RuntimeException("Don't bind EBO when vao = 0, that will cause state bug!");
             }
             if (this.ebo != ebo) {
                 GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
