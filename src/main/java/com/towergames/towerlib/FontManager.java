@@ -104,7 +104,7 @@ public class FontManager {
 
         }
 
-        public float renderText(float x, float y, int size, float lineSpacing, float maxWidth, String... texts) {
+        public float renderText(float x, float y, int size, float lineSpacing, float maxWidth, Vector4f color, String... texts) {
             GLHandler gl = game.getGlHandler();
             WindowHandler window = game.getWindowHandler();
             int charCount = Arrays.stream(texts).mapToInt(String::length).sum();
@@ -151,7 +151,7 @@ public class FontManager {
             }
             vaoText.vboData(data, GL15.GL_DYNAMIC_DRAW);
             gl.getState().texture0(texture);
-            programText.uniform("uColor", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)).uniform("uTexture", 0);
+            programText.uniform("uColor", color).uniform("uTexture", 0);
             gl.getState().depthTest(false)
                     .model(new Matrix4f().translate(x, y, 0.0f)).view(new Matrix4f())
                     .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
@@ -159,8 +159,8 @@ public class FontManager {
             return textBlockWidth;
         }
 
-        public float renderText(float x, float y, int size, float maxWidth, String... texts) {
-            return renderText(x, y, size, size, maxWidth, texts);
+        public float renderText(float x, float y, int size, float maxWidth, Vector4f color, String... texts) {
+            return renderText(x, y, size, size, maxWidth, color, texts);
         }
 
         public class Char {

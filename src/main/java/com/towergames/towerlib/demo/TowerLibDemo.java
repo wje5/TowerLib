@@ -52,7 +52,7 @@ public class TowerLibDemo extends TowerGame {
 //        texture.drawRect2D(100, 100, 100, 100, 100, 100);
 //        texture.drawRect2D(150, 200, 150, 200, 100, 100);
 //        texture.drawRect2D(250, 0, 250, 0, 600, 600);
-        float width = testFont.renderText(0, 100, 48, 0, "AbCdEf 中文测试", "第二行");
+        float width = testFont.renderText(0, 100, 48, 0, TowerUtil.color(0xFFFFFFFF),"AbCdEf 中文测试", "第二行");
         texture.drawRect2D(width, 100, 100, 100, width, 100, 100, 100, new Vector4f(1.0f, 1.0f, 1.0f, 0.2f));
         gl.swapBuffer();
         game.getGlHandler().checkError();
