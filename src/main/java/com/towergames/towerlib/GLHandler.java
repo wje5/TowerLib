@@ -12,10 +12,11 @@ import java.util.*;
 public class GLHandler {
     private final TowerGame game;
     private Map<String, Integer> shaders = new HashMap<>();
+    private Map<String, Texture> textures = new HashMap<>();
     private Stack<GLState> stack;
     public final int ebo10000Rects;
-    public final Program basic, xyuv;
-    public final Texture white;
+    public final Program basic, xyuv, pbr;
+    public final Texture white, defaultNormal;
     public final VAO vaoRect, vaoRectDynamicUV;
 
     public GLHandler(TowerGame game) {
@@ -25,7 +26,9 @@ public class GLHandler {
         stack.push(new GLState());
         basic = createProgram("shaders/basic.vs", "shaders/basic.fs");
         xyuv = createProgram("shaders/xyuv.vs", "shaders/basic.fs");
+        pbr = createProgram("shaders/pbr.vs", "shaders/pbr.fs");
         white = createTexture(false).image(GL11.GL_RGBA, 1, 1, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, TowerUtil.toDirectBuffer(new byte[]{-1, -1, -1, -1}));
+        defaultNormal = createTexture(false).image(GL11.GL_RGBA, 1, 1, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, TowerUtil.toDirectBuffer(new byte[]{-128, -128, -1, -1}));
         int[] data = new int[60000];
         for (int i = 0; i < 10000; i++) {
             data[i * 6] = i * 4;
@@ -35,11 +38,11 @@ public class GLHandler {
             data[i * 6 + 4] = i * 4 + 2;
             data[i * 6 + 5] = i * 4 + 3;
         }
-        createVAO().bindEBO(ebo10000Rects = GL15.glGenBuffers()).eboData(data, GL15.GL_STATIC_DRAW); //For avoid bind ebo to vao 0
+        createVAO().bindEBO(ebo10000Rects = GL15.glGenBuffers(), 60000, GL11.GL_UNSIGNED_INT).eboData(data, GL15.GL_STATIC_DRAW); //For avoid bind ebo to vao 0
         vaoRect = createVAO().vboData(new float[]{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f})
-                .vertexAttrib(0, 3, 0, 0).vertexAttrib(1, 2, 0, 48).eboData(new int[]{0, 1, 2, 0, 2, 3});
+                .vertexAttrib(0, 3, 0, 0).vertexAttrib(1, 2, 0, 48).eboData(new int[]{0, 1, 2, 0, 2, 3}).readOnly();
         vaoRectDynamicUV = createVAO().vboData(new float[]{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f}, GL15.GL_DYNAMIC_DRAW)
-                .vertexAttrib(0, 3, 0, 0).vertexAttrib(1, 2, 0, 48).eboData(new int[]{0, 1, 2, 0, 2, 3});
+                .vertexAttrib(0, 3, 0, 0).vertexAttrib(1, 2, 0, 48).eboData(new int[]{0, 1, 2, 0, 2, 3}).readOnly();
     }
 
     public GLState getState() {
@@ -111,10 +114,19 @@ public class GLHandler {
         return new Texture(mipmap);
     }
 
-    public Texture loadTexture(String path, boolean mipmap) {
+    public Light createLight(Vector3f pos, Vector3f color) {
+        return new Light(pos, color);
+    }
+
+    public Texture loadTexture(String path, boolean srgb, boolean mipmap) {
+        if (textures.containsKey(path)) {
+            return textures.get(path);
+        }
         PixelData data = PixelDatas.create(TowerUtil.readToBuffer(path));
         getState().unpackAlignment(4);
-        return createTexture(mipmap).image(GL11.GL_RGBA, data.getWidth(), data.getHeight(), GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, data.getPixelsRGBA());
+        Texture texture = createTexture(mipmap).image(srgb ? GL21.GL_SRGB_ALPHA : GL11.GL_RGBA, data.getWidth(), data.getHeight(), GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, data.getPixelsRGBA());
+        textures.put(path, texture);
+        return texture;
     }
 
     public void drawRect2D(float x, float y, float width, float height, Vector4f color) {
@@ -130,8 +142,10 @@ public class GLHandler {
     public class Texture {
         private final int id;
         private int width, height;
+        private boolean mipmap;
 
         private Texture(boolean mipmap) {
+            this.mipmap = mipmap;
             GLState state = getState();
             state.texture(state.activeTexture, id = GL11.glGenTextures());
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
@@ -200,6 +214,10 @@ public class GLHandler {
         public int getHeight() {
             return height;
         }
+
+        public boolean isMipmap() {
+            return mipmap;
+        }
     }
 
     public class Program {
@@ -253,6 +271,23 @@ public class GLHandler {
             location = GL20.glGetUniformLocation(id, name);
             uniformLocations.put(name, location);
             return location;
+        }
+
+        public Program lights(Light... lights) {
+            uniform("uLightCount", lights.length);
+            float[] positions = new float[lights.length * 3];
+            float[] colors = new float[lights.length * 3];
+            for (int i = 0; i < lights.length; i++) {
+                positions[i * 3] = lights[i].pos.x;
+                positions[i * 3 + 1] = lights[i].pos.y;
+                positions[i * 3 + 2] = lights[i].pos.z;
+                colors[i * 3] = lights[i].color.x;
+                colors[i * 3 + 1] = lights[i].color.y;
+                colors[i * 3 + 2] = lights[i].color.z;
+            }
+            uniform3f("uLightPositions", positions);
+            uniform3f("uLightColors", colors);
+            return this;
         }
 
         public Program uniform(String name, int value) {
@@ -388,6 +423,10 @@ public class GLHandler {
             return this;
         }
 
+        public Program uniform(String name, Vector2i v) {
+            return uniform2i(name, v.x, v.y);
+        }
+
         public Program uniform3i(String name, int... values) {
             Object o = uniforms.put(name, values);
             use();
@@ -395,6 +434,10 @@ public class GLHandler {
                 GL20.glUniform3iv(getUniformLocation(name), values);
             }
             return this;
+        }
+
+        public Program uniform(String name, Vector3i v) {
+            return uniform3i(name, v.x, v.y, v.z);
         }
 
         public Program uniform4i(String name, int... values) {
@@ -406,6 +449,10 @@ public class GLHandler {
             return this;
         }
 
+        public Program uniform(String name, Vector4i v) {
+            return uniform4i(name, v.x, v.y, v.z, v.w);
+        }
+
         public Program use() {
             getState().program(this);
             return this;
@@ -414,8 +461,9 @@ public class GLHandler {
 
     public class VAO {
         private final int vao;
-        private int vbo, vboDataCount, ebo, eboDataCount;
+        private int vbo, vboDataCount, ebo, eboDataCount, eboDataType;
         private int[] attribSize = new int[16];
+        private boolean readOnly;
 
         //Warning: Any VAO operation will bind it!
         private VAO() {
@@ -423,9 +471,12 @@ public class GLHandler {
         }
 
         public VAO vboData(float[] data, int type) {
+            if (readOnly) {
+                throw new RuntimeException("VAO is read only!");
+            }
+            vboDataCount = data.length;
             getState().vao(vao, ebo).vbo(vbo);
             GL15.glBufferData(GL15.GL_ARRAY_BUFFER, data, type);
-            vboDataCount = data.length;
             return this;
         }
 
@@ -433,13 +484,34 @@ public class GLHandler {
             return this.vboData(data, GL15.GL_STATIC_DRAW);
         }
 
+        public VAO vboData(ByteBuffer data, int type) {
+            if (readOnly) {
+                throw new RuntimeException("VAO is read only!");
+            }
+            vboDataCount = data.remaining();
+            getState().vao(vao, ebo).vbo(vbo);
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, data, type);
+
+            return this;
+        }
+
+        public VAO vboData(ByteBuffer data) {
+            return this.vboData(data, GL15.GL_STATIC_DRAW);
+        }
+
         public VAO vboSubdata(long offset, float[] data) {
+            if (readOnly) {
+                throw new RuntimeException("VAO is read only!");
+            }
             getState().vao(vao, ebo).vbo(vbo);
             GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, offset, data);
             return this;
         }
 
         public VAO vertexAttrib(int index, int size, int type, boolean normalized, int stride, long pointer) {
+            if (readOnly) {
+                throw new RuntimeException("VAO is read only!");
+            }
             getState().vao(vao, ebo).vbo(vbo);
             GL20.glVertexAttribPointer(index, size, type, normalized, stride, pointer);
             GL20.glEnableVertexAttribArray(index);
@@ -456,12 +528,16 @@ public class GLHandler {
         }
 
         public VAO eboData(int[] data, int type) {
+            if (readOnly) {
+                throw new RuntimeException("VAO is read only!");
+            }
             getState().vao(vao, ebo);
             if (ebo == 0) {
                 getState().ebo(ebo = GL15.glGenBuffers());
             }
-            GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, data, type);
             eboDataCount = data.length;
+            eboDataType = GL11.GL_UNSIGNED_INT;
+            GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, data, type);
             return this;
         }
 
@@ -469,18 +545,72 @@ public class GLHandler {
             return eboData(data, GL15.GL_STATIC_DRAW);
         }
 
-        public VAO bindEBO(int id) {
+        public VAO eboData(short[] data, int type) {
+            if (readOnly) {
+                throw new RuntimeException("VAO is read only!");
+            }
+            getState().vao(vao, ebo);
+            if (ebo == 0) {
+                getState().ebo(ebo = GL15.glGenBuffers());
+            }
+            eboDataCount = data.length;
+            eboDataType = GL11.GL_UNSIGNED_SHORT;
+            GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, data, type);
+            return this;
+        }
+
+        public VAO eboData(short[] data) {
+            return eboData(data, GL15.GL_STATIC_DRAW);
+        }
+
+        public VAO eboData(ByteBuffer data, int type, int dataType) {
+            if (readOnly) {
+                throw new RuntimeException("VAO is read only!");
+            }
+            getState().vao(vao, ebo);
+            if (ebo == 0) {
+                getState().ebo(ebo = GL15.glGenBuffers());
+            }
+            switch (dataType) {
+                case GL11.GL_UNSIGNED_INT:
+                    eboDataCount = data.remaining() / 4;
+                    break;
+                case GL11.GL_UNSIGNED_SHORT:
+                    eboDataCount = data.remaining() / 2;
+                    break;
+                case GL11.GL_UNSIGNED_BYTE:
+                    eboDataCount = data.remaining();
+            }
+            eboDataType = dataType;
+            GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, data, type);
+            return this;
+        }
+
+        public VAO eboData(ByteBuffer data, int dataType) {
+            return eboData(data, GL15.GL_STATIC_DRAW, dataType);
+        }
+
+        public VAO bindEBO(int id, int count, int dataType) {
+            if (readOnly) {
+                throw new RuntimeException("VAO is read only!");
+            }
             if (ebo != 0) {
                 throw new RuntimeException("Don't bindEBO if eboData be called, old EBO leaking!");
             }
+            eboDataCount = count;
+            eboDataType = dataType;
             getState().vao(vao, 0).ebo(ebo = id);
-            getState();
+            return this;
+        }
+
+        public VAO readOnly() {
+            this.readOnly = true;
             return this;
         }
 
         public void drawElements(int mode, int count) {
             getState().vao(vao, ebo);
-            GL11.glDrawElements(mode, count, GL11.GL_UNSIGNED_INT, 0);
+            GL11.glDrawElements(mode, count, eboDataType, 0);
         }
 
         public void drawElements(int mode) {
@@ -505,21 +635,53 @@ public class GLHandler {
         }
     }
 
+    public class Light {
+        private final Vector3f pos, color;
+
+        private Light(Vector3f pos, Vector3f color) {
+            this.pos = pos;
+            this.color = color;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            Light light = (Light) o;
+            return Objects.equals(pos, light.pos) &&
+                    Objects.equals(color, light.color);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(pos, color);
+        }
+    }
+
     public class GLState {
         private boolean cullFront, cullFace, depthTest, blend;
         private int depthFunc, vao, vbo, ebo, unpackAlignment, activeTexture, blendSrcFactor = GL11.GL_ONE, blendDstFactor = GL11.GL_ZERO;
         private int[] textures;
-        private Vector4f clearColor = new Vector4f();
-        private Vector4i viewport = new Vector4i();
+        private Vector4f clearColor;
+        private Vector4i viewport;
         private Program program;
+        private Object[] vertexAttribs = new Object[16];
         public Matrix4f model, view, projection;
+        private Stack<List<Matrix4f>> mvpStack;
 
         private GLState() {
+            clearColor = new Vector4f();
+            viewport = new Vector4i();
             model = new Matrix4f();
             view = new Matrix4f();
             projection = new Matrix4f();
             unpackAlignment = 4;
             textures = new int[16];
+            mvpStack = new Stack<>();
         }
 
         private GLState(GLState state) {
@@ -530,9 +692,9 @@ public class GLHandler {
             blend = state.blend;
             blendSrcFactor = state.blendSrcFactor;
             blendDstFactor = state.blendDstFactor;
-            clearColor = state.clearColor;
+            clearColor = new Vector4f(state.clearColor);
             unpackAlignment = state.unpackAlignment;
-            viewport = state.viewport;
+            viewport = new Vector4i(state.viewport);
             model = new Matrix4f(state.model);
             view = new Matrix4f(state.view);
             projection = new Matrix4f(state.projection);
@@ -542,6 +704,32 @@ public class GLHandler {
             ebo = state.ebo;
             textures = Arrays.copyOf(state.textures, 16);
             activeTexture = state.activeTexture;
+            for (int i = 0; i < vertexAttribs.length; i++) {
+                Object o = state.vertexAttribs[i];
+                if (o instanceof Integer || o instanceof Float) {
+                    vertexAttribs[i] = o;
+                } else if (o instanceof Vector2f) {
+                    vertexAttribs[i] = new Vector2f((Vector2f) o);
+                } else if (o instanceof Vector3f) {
+                    vertexAttribs[i] = new Vector3f((Vector3f) o);
+                } else if (o instanceof Vector4f) {
+                    vertexAttribs[i] = new Vector4f((Vector4f) o);
+                } else if (o instanceof Vector2i) {
+                    vertexAttribs[i] = new Vector2i((Vector2i) o);
+                } else if (o instanceof Vector3i) {
+                    vertexAttribs[i] = new Vector3i((Vector3i) o);
+                } else if (o instanceof Vector4i) {
+                    vertexAttribs[i] = new Vector4i((Vector4i) o);
+                }
+            }
+            mvpStack = new Stack<>();
+            state.mvpStack.forEach(e -> {
+                List<Matrix4f> l = new ArrayList<>();
+                l.add(new Matrix4f(e.get(0)));
+                l.add(new Matrix4f(e.get(1)));
+                l.add(new Matrix4f(e.get(2)));
+                mvpStack.push(l);
+            });
         }
 
         public void applyState(GLState state) {
@@ -567,6 +755,31 @@ public class GLHandler {
                 texture(i, state.textures[i]);
             }
             //activeTexture is not applied, because it should not be manually controlled.
+            mvpStack = new Stack<>();
+            state.mvpStack.forEach(e -> {
+                List<Matrix4f> l = new ArrayList<>();
+                l.add(new Matrix4f(e.get(0)));
+                l.add(new Matrix4f(e.get(1)));
+                l.add(new Matrix4f(e.get(2)));
+                mvpStack.push(l);
+            });
+        }
+
+        public GLState pushMVP() {
+            List<Matrix4f> l = new ArrayList<>();
+            l.add(new Matrix4f(model));
+            l.add(new Matrix4f(view));
+            l.add(new Matrix4f(projection));
+            mvpStack.push(l);
+            return this;
+        }
+
+        public GLState popMVP() {
+            List<Matrix4f> l = mvpStack.pop();
+            model = l.get(0);
+            view = l.get(1);
+            projection = l.get(2);
+            return this;
         }
 
         public GLState cullFront(boolean cullFront) {
@@ -662,6 +875,91 @@ public class GLHandler {
             if (this.program != program) {
                 GL20.glUseProgram(program == null ? 0 : program.id);
                 this.program = program;
+            }
+            return this;
+        }
+
+        public GLState vertexAttrib(int index, Object value) {
+            if (value instanceof Float) {
+                return vertexAttrib(index, (float) value);
+            } else if (value instanceof Integer) {
+                return vertexAttrib(index, (int) value);
+            } else if (value instanceof Vector2f) {
+                return vertexAttrib(index, (Vector2f) value);
+            } else if (value instanceof Vector3f) {
+                return vertexAttrib(index, (Vector3f) value);
+            } else if (value instanceof Vector4f) {
+                return vertexAttrib(index, (Vector4f) value);
+            } else if (value instanceof Vector2i) {
+                return vertexAttrib(index, (Vector2i) value);
+            } else if (value instanceof Vector3i) {
+                return vertexAttrib(index, (Vector3i) value);
+            } else if (value instanceof Vector4i) {
+                return vertexAttrib(index, (Vector4i) value);
+            }
+            throw new RuntimeException("Unsupported vertex attrib type: " + value);
+        }
+
+        public GLState vertexAttrib(int index, float value) {
+            if (!(vertexAttribs[index] instanceof Float && ((float) vertexAttribs[index]) == value)) {
+                GL20.glVertexAttrib1f(index, value);
+                vertexAttribs[index] = value;
+            }
+            return this;
+        }
+
+        public GLState vertexAttrib(int index, int value) {
+            if (!(vertexAttribs[index] instanceof Integer && ((int) vertexAttribs[index]) == value)) {
+                GL30.glVertexAttribI1i(index, value);
+                vertexAttribs[index] = value;
+            }
+            return this;
+        }
+
+        public GLState vertexAttrib(int index, Vector2f value) {
+            if (!value.equals(vertexAttribs[index])) {
+                GL20.glVertexAttrib2f(index, value.x, value.y);
+                vertexAttribs[index] = value;
+            }
+            return this;
+        }
+
+        public GLState vertexAttrib(int index, Vector3f value) {
+            if (!value.equals(vertexAttribs[index])) {
+                GL20.glVertexAttrib3f(index, value.x, value.y, value.z);
+                vertexAttribs[index] = value;
+            }
+            return this;
+        }
+
+        public GLState vertexAttrib(int index, Vector4f value) {
+            if (!value.equals(vertexAttribs[index])) {
+                GL20.glVertexAttrib4f(index, value.x, value.y, value.z, value.w);
+                vertexAttribs[index] = value;
+            }
+            return this;
+        }
+
+        public GLState vertexAttrib(int index, Vector2i value) {
+            if (!value.equals(vertexAttribs[index])) {
+                GL30.glVertexAttribI2i(index, value.x, value.y);
+                vertexAttribs[index] = value;
+            }
+            return this;
+        }
+
+        public GLState vertexAttrib(int index, Vector3i value) {
+            if (!value.equals(vertexAttribs[index])) {
+                GL30.glVertexAttribI3i(index, value.x, value.y, value.z);
+                vertexAttribs[index] = value;
+            }
+            return this;
+        }
+
+        public GLState vertexAttrib(int index, Vector4i value) {
+            if (!value.equals(vertexAttribs[index])) {
+                GL30.glVertexAttribI4i(index, value.x, value.y, value.z, value.w);
+                vertexAttribs[index] = value;
             }
             return this;
         }

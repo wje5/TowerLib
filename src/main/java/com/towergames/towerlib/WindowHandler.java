@@ -103,11 +103,11 @@ public class WindowHandler {
         fullscreenWidth = vidmode.width();
         fullscreenHeight = vidmode.height();
         if (fullscreen) {
-            game.getLogger().info("Set window to fullscreen...");
+            game.getLogger().info("Set window to fullscreen ({}x{})",fullscreenWidth,fullscreenHeight);
             GLFW.glfwSetWindowMonitor(window, GLFW.glfwGetPrimaryMonitor(), 0, 0, fullscreenWidth, fullscreenHeight,
                     GLFW.GLFW_DONT_CARE);
         } else {
-            game.getLogger().info("Set fullscreen to window...");
+            game.getLogger().info("Set fullscreen to window ({}x{})",windowWidthDefault,windowHeightDefault);
             GLFW.glfwSetWindowMonitor(window, 0, (fullscreenWidth - windowWidthDefault) / 2, (fullscreenHeight - windowHeightDefault) / 2,
                     windowWidthDefault, windowHeightDefault, GLFW.GLFW_DONT_CARE);
         }

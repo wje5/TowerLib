@@ -31,7 +31,7 @@ public class FontManager {
         }
         GLHandler gl = game.getGlHandler();
         programText = gl.createProgram("shaders/xyuv.vs", "shaders/alpha.fs");
-        vaoText = gl.createVAO().vertexAttrib(0, 4, 0, 0).bindEBO(gl.ebo10000Rects);
+        vaoText = gl.createVAO().vertexAttrib(0, 4, 0, 0).bindEBO(gl.ebo10000Rects, 60000, GL11.GL_UNSIGNED_INT);
     }
 
     public Font loadFont(String path) {
@@ -99,7 +99,7 @@ public class FontManager {
             xOffsets.put(height, xOffset + width);
             Char ch = new Char(glyph.bitmap_left(), glyph.bitmap_top(), xOffset, yOffset, width, height, (int) glyph.advance().x());
             m.put(c, ch);
-            game.getLogger().debug("char {} u{} v{} bearing{}/{} size{}/{}", c, ch.u, ch.v, ch.bearingX, ch.bearingY, ch.width, ch.height);
+//            game.getLogger().debug("char {} u{} v{} bearing{}/{} size{}/{}", c, ch.u, ch.v, ch.bearingX, ch.bearingY, ch.width, ch.height);
             return ch;
 
         }
@@ -152,10 +152,12 @@ public class FontManager {
             vaoText.vboData(data, GL15.GL_DYNAMIC_DRAW);
             gl.getState().texture0(texture);
             programText.uniform("uColor", color).uniform("uTexture", 0);
-            gl.getState().depthTest(false)
-                    .model(new Matrix4f().translate(x, y, 0.0f)).view(new Matrix4f())
+            gl.getState().depthTest(false);
+            gl.getState().pushMVP();
+                    gl.getState().model(new Matrix4f().translate(x, y, 0.0f)).view(new Matrix4f())
                     .projection(new Matrix4f().ortho(0.0f, window.getWidth(), window.getHeight(), 0.0f, 0.0f, 1.0f)).applyMVP();
             vaoText.drawElements(GL11.GL_TRIANGLES, charCount * 6);
+            gl.getState().popMVP();
             return textBlockWidth;
         }
 
