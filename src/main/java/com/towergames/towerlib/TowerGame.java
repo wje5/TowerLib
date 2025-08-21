@@ -5,8 +5,6 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Timer;
-
 public class TowerGame {
     private Logger logger = LoggerFactory.getLogger(TowerGame.class);
     private WindowHandler windowHandler;
@@ -74,8 +72,12 @@ public class TowerGame {
         windowHandler.closeWindow();
     }
 
-    public long getTimeFromStart() {
+    public long getNanosFromStart() {
         return System.nanoTime() - startTime;
+    }
+
+    public float getSecFromStart() {
+        return getNanosFromStart() * 0.000000001f;
     }
 
     public int getFPS() {
@@ -123,12 +125,12 @@ public class TowerGame {
         }
 
         public Timer setTimer(float sec) {
-            setTimeStamp(getTimeFromStart() + (long) (sec * 1000000000L));
+            setTimeStamp(getNanosFromStart() + (long) (sec * 1000000000L));
             return this;
         }
 
         public long get() {
-            return time - getTimeFromStart();
+            return time - getNanosFromStart();
         }
 
         public boolean isTimesUp() {

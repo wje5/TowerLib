@@ -110,6 +110,10 @@ public class GLHandler {
         return new VAO();
     }
 
+    public UBO createUBO() {
+        return new UBO();
+    }
+
     public Texture createTexture(boolean mipmap) {
         return new Texture(mipmap);
     }
@@ -453,6 +457,16 @@ public class GLHandler {
             return uniform4i(name, v.x, v.y, v.z, v.w);
         }
 
+        public Program uniformBlock(String name, int index) {
+            Object o = uniforms.put(name, index);
+            use();
+            if (!Integer.valueOf(index).equals(o)) {
+                GL20.glUniform1i(getUniformLocation(name), index);
+                GL31.glUniformBlockBinding(id, GL31.glGetUniformBlockIndex(id, name), index);
+            }
+            return this;
+        }
+
         public Program use() {
             getState().program(this);
             return this;
@@ -635,6 +649,31 @@ public class GLHandler {
         }
     }
 
+    public class UBO {
+        private final int ubo;
+
+        private UBO() {
+            getState().ubo(ubo = GL15.glGenBuffers());
+        }
+
+        public UBO uboData(float[] data, int type) {
+            getState().ubo(ubo);
+            GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, data, type);
+            return this;
+        }
+
+        public UBO uboSubData(long offset, float[] data) {
+            getState().ubo(ubo);
+            GL15.glBufferSubData(GL31.GL_UNIFORM_BUFFER, offset, data);
+            return this;
+        }
+
+        public UBO bind(int index) {
+            GL30.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, index, ubo);
+            return this;
+        }
+    }
+
     public class Light {
         private final Vector3f pos, color;
 
@@ -664,7 +703,7 @@ public class GLHandler {
 
     public class GLState {
         private boolean cullFront, cullFace, depthTest, blend;
-        private int depthFunc, vao, vbo, ebo, unpackAlignment, activeTexture, blendSrcFactor = GL11.GL_ONE, blendDstFactor = GL11.GL_ZERO;
+        private int depthFunc, vao, vbo, ebo, ubo, unpackAlignment, activeTexture, blendSrcFactor = GL11.GL_ONE, blendDstFactor = GL11.GL_ZERO;
         private int[] textures;
         private Vector4f clearColor;
         private Vector4i viewport;
@@ -702,6 +741,7 @@ public class GLHandler {
             vao = state.vao;
             vbo = state.vbo;
             ebo = state.ebo;
+            ubo = state.ubo;
             textures = Arrays.copyOf(state.textures, 16);
             activeTexture = state.activeTexture;
             for (int i = 0; i < vertexAttribs.length; i++) {
@@ -751,6 +791,7 @@ public class GLHandler {
             }
             vao(state.vao, state.ebo);
             vbo(state.vbo);
+            ubo(state.ubo);
             for (int i = 0; i < 16; i++) {
                 texture(i, state.textures[i]);
             }
@@ -1007,6 +1048,14 @@ public class GLHandler {
             if (this.ebo != ebo) {
                 GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
                 this.ebo = ebo;
+            }
+            return this;
+        }
+
+        public GLState ubo(int ubo) {
+            if (this.ubo != ubo) {
+                GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, ubo);
+                this.ubo = ubo;
             }
             return this;
         }

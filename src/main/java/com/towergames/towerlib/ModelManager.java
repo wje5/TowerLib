@@ -5,6 +5,7 @@ import de.javagl.jgltf.model.image.PixelData;
 import de.javagl.jgltf.model.image.PixelDatas;
 import de.javagl.jgltf.model.io.GltfModelReader;
 import de.javagl.jgltf.model.v2.MaterialModelV2;
+import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
@@ -12,15 +13,18 @@ import org.lwjgl.opengl.GL21;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
 import java.util.*;
 
 public class ModelManager {
     private final TowerGame game;
     private Map<String, Model> models = new HashMap<>();
     private Map<TextureModel, GLHandler.Texture> textures = new HashMap<>();
+    private GLHandler.UBO uboJointMatrices;
 
     public ModelManager(TowerGame game) {
         this.game = game;
+        uboJointMatrices = game.getGlHandler().createUBO();
     }
 
     public Model loadModel(String path) {
@@ -65,6 +69,10 @@ public class ModelManager {
             model.getSceneModels().forEach(scene -> {
                 scene.getNodeModels().forEach(this::setupNode);
             });
+            model.getAnimationModels().forEach(e -> {
+                animations.put(e.getName(), e);
+                game.getLogger().debug("load animation: {}", e.getName());
+            });
         }
 
         private void setupNode(NodeModel node) {
@@ -77,9 +85,39 @@ public class ModelManager {
             node.getChildren().forEach(this::setupNode);
         }
 
-        public void doRender(boolean renderDepth) {
+        public void doRender(boolean renderDepth, Map<String, Float> animationState) {
             GLHandler gl = game.getGlHandler();
+            Map<NodeModel, float[][]> dirty = new HashMap<>();
+            if (animationState != null && !animationState.isEmpty()) {
+                animationState.forEach((name, time) -> {
+                    AnimationModel animation = animations.get(name);
+                    animation.getChannels().forEach(channel -> {
+                        AnimationModel.Sampler sampler = channel.getSampler();
+                        float[] data = interpolation(sampler, time);
+                        NodeModel node = channel.getNodeModel();
+                        float[][] a = dirty.get(node);
+                        if (a == null) {
+                            a = new float[][]{node.getTranslation(), node.getRotation(), node.getScale(), node.getWeights()};
+                            dirty.put(node, a);
+                        }
+                        switch (channel.getPath()) {
+                            case "translation":
+                                node.setTranslation(data);
+                                break;
+                            case "rotation":
+                                node.setRotation(data);
+                                break;
+                            case "scale":
+                                node.setScale(data);
+                                break;
+                            case "weights":
+                                node.setWeights(data);
+                        }
+                    });
+                });
+            }
             GLHandler.Program program = renderDepth ? null : gl.pbr;
+            SkinModel last = null;
             for (Primitive primitive : primitives) {
                 SkinModel skin = primitive.node.getSkinModel();
                 if (skin == null) {
@@ -91,9 +129,72 @@ public class ModelManager {
                     primitive.doRender(renderDepth);
                     gl.getState().popMVP();
                 } else {
-                    ((Object) null).toString();
+                    program.uniform("uEnableSkinning", true);
+                    if (skin != last) {
+                        List<NodeModel> joints = skin.getJoints();
+                        float[] jointMatrices = new float[joints.size() * 16];
+                        for (int i = 0; i < joints.size(); i++) {
+                            float[] f = joints.get(i).computeGlobalTransform(new float[16]);
+                            float[] ib = skin.getInverseBindMatrix(i, new float[16]);
+                            float[] r = new Matrix4f(f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12], f[13], f[14], f[15])
+                                    .mul(ib[0], ib[1], ib[2], ib[3], ib[4], ib[5], ib[6], ib[7], ib[8], ib[9], ib[10], ib[11], ib[12], ib[13], ib[14], ib[15]).get(new float[16]);
+                            System.arraycopy(r, 0, jointMatrices, i * 16, 16);
+                        }
+                        uboJointMatrices.uboData(jointMatrices, GL15.GL_DYNAMIC_DRAW);
+                        uboJointMatrices.bind(0);
+                        program.uniformBlock("JointMatircesBlock", 0);
+                        gl.getState().applyMVP();
+                        primitive.doRender(renderDepth);
+                        last = skin;
+                    }
                 }
             }
+        }
+
+        private float[] interpolation(AnimationModel.Sampler sampler, float time) {
+            ByteBuffer input = sampler.getInput().getBufferViewModel().getBufferViewData();
+            ByteBuffer output = sampler.getOutput().getBufferViewModel().getBufferViewData();
+            FloatBuffer fb = output.asFloatBuffer();
+            int frameCount = input.remaining() / 4;
+            int count = output.remaining() / 4 / frameCount;
+            float f = 0, next = 0, t = 0;
+            float[] a = new float[count], b = new float[count];
+            int i = 0;
+            for (; input.hasRemaining(); i++) {
+                f = next;
+                next = input.getFloat();
+                if (f <= time && next >= time) {
+                    t = (time - f) / (next - f);
+                    fb.position(i * count);
+                    fb.get(b);
+                    if (i == 0) {
+                        return b;
+                    }
+                    fb.position((i * count - count));
+                    fb.get(a);
+                    break;
+                }
+            }
+            if (time >= next) {
+                fb.position((i * count - count));
+                output.asFloatBuffer().get(b);
+                return b;
+            }
+            AnimationModel.Interpolation interpolation = sampler.getInterpolation();
+            switch (interpolation) {
+                case STEP:
+                    return a;
+                case LINEAR:
+                    float[] r = new float[count];
+                    for (int j = 0; j < count; j++) {
+                        r[j] = (1 - t) * a[j] + t * b[j];
+                    }
+                    return r;
+                case CUBICSPLINE:
+                    throw new RuntimeException("TODO");
+                    //TODO cubic spline interpolation
+            }
+            return null;
         }
 
         public class Primitive {
@@ -162,9 +263,8 @@ public class ModelManager {
                         .uniform4f("uBaseColorFactor", material.getBaseColorFactor()).uniform("uMetallicFactor", material.getMetallicFactor())
                         .uniform("uRoughnessFactor", material.getRoughnessFactor()).uniform("uNormalScale", material.getNormalScale())
                         .uniform("uOcclusionStrength", material.getOcclusionStrength()).uniform3f("uEmissiveFactor", material.getEmissiveFactor())
-                        .uniform3f("uMorphWeights", weights).lights(gl.createLight(TowerUtil.getDirection(-20f,40),new Vector3f(1.0f,1.0f,1.0f)));
+                        .uniform3f("uMorphWeights", weights).lights(gl.createLight(TowerUtil.getDirection(-20f, 40), new Vector3f(1.0f, 1.0f, 1.0f)));
                 vao.drawElements();
-                game.getLogger().debug("render");
 //                vao.drawArrays(GL11.GL_TRIANGLES);
             }
 

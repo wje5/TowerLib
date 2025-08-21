@@ -7,7 +7,7 @@ layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec4 aTangent;
 layout (location = 3) in vec2 aTexcoord;
 layout (location = 4) in vec4 aColor;
-layout (location = 5) in vec4 aJoints;
+layout (location = 5) in ivec4 aJoints;
 layout (location = 6) in vec4 aWeights;
 layout (location = 7) in vec3 aMorphPosition;
 layout (location = 8) in vec3 aMorphNormal;
@@ -55,10 +55,10 @@ void main() {
         morphedTangent += uMorphWeights.z * aMorphTangent2;
     }
     if (uEnableSkinning) {
-        mat4 skinMatrix = aWeights.x * jointMatrices[int(aJoints.x)] +
-        aWeights.y * jointMatrices[int(aJoints.y)] +
-        aWeights.z * jointMatrices[int(aJoints.z)] +
-        aWeights.w * jointMatrices[int(aJoints.w)];
+        mat4 skinMatrix = aWeights.x * jointMatrices[aJoints.x] +
+        aWeights.y * jointMatrices[aJoints.y] +
+        aWeights.z * jointMatrices[aJoints.z] +
+        aWeights.w * jointMatrices[aJoints.w];
 
         vec4 skinnedPosition = skinMatrix * vec4(morphedPosition, 1.0);
         vec3 skinnedNormal = mat3(skinMatrix) * morphedNormal;

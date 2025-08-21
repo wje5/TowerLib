@@ -7,6 +7,9 @@ import org.joml.Vector4f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL11;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class TowerLibDemo extends TowerGame {
     private static TowerLibDemo game;
     private FontManager.Font testFont;
@@ -86,7 +89,9 @@ public class TowerLibDemo extends TowerGame {
             gl.getState().pushMVP();
             gl.getState().model.scale(1f);
             gl.getState().applyMVP();
-            getModelManager().loadModel("models/illstrate.glb").doRender(false);
+            Map<String, Float> animations = new HashMap<>();
+            animations.put("Act1", game.getSecFromStart() % 3f);
+            getModelManager().loadModel("models/act_test_3.glb").doRender(false, animations);
 //            getModelManager().loadModel("models/maiden_test_3.glb").doRender(false);
             gl.getState().popMVP();
         } else {
