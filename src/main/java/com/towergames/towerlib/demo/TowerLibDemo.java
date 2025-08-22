@@ -90,8 +90,8 @@ public class TowerLibDemo extends TowerGame {
             gl.getState().model.scale(1f);
             gl.getState().applyMVP();
             Map<String, Float> animations = new HashMap<>();
-            animations.put("Act1", game.getSecFromStart() % 3f);
-            getModelManager().loadModel("models/act_test_3.glb").doRender(false, animations);
+            animations.put("KeyAction", game.getSecFromStart() % 3f);
+            getModelManager().loadModel("models/cubetest_key.glb").doRender(false, animations);
 //            getModelManager().loadModel("models/maiden_test_3.glb").doRender(false);
             gl.getState().popMVP();
         } else {

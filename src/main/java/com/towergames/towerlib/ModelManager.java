@@ -246,9 +246,11 @@ public class ModelManager {
                 if (weights == null) {
                     weights = node.getMeshModels().get(0).getWeights();
                     if (weights == null) {
-                        weights = new float[primitive.getTargets().size()];
+                        weights = new float[3];
                     }
                 }
+                weights = new float[]{weights.length > 0 ? weights[0] : 0, weights.length > 1 ? weights[1] : 0, weights.length > 2 ? weights[2] : 0};
+                game.getLogger().debug("weights: {}", weights);
                 MaterialModelV2 material = (MaterialModelV2) primitive.getMaterialModel();
                 if (material == null) {
                     material = new MaterialModelV2();
@@ -265,7 +267,6 @@ public class ModelManager {
                         .uniform("uOcclusionStrength", material.getOcclusionStrength()).uniform3f("uEmissiveFactor", material.getEmissiveFactor())
                         .uniform3f("uMorphWeights", weights).lights(gl.createLight(TowerUtil.getDirection(-20f, 40), new Vector3f(1.0f, 1.0f, 1.0f)));
                 vao.drawElements();
-//                vao.drawArrays(GL11.GL_TRIANGLES);
             }
 
             private int getAttributeIndex(String attribute) {
