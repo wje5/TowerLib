@@ -145,4 +145,14 @@ public class TowerUtil {
         ((Buffer) direct).flip();
         return direct;
     }
+
+    public static int[] readUnsignedShortsToIntArray(ByteBuffer buffer) {
+        short[] shorts = new short[buffer.remaining() / 2];
+        buffer.asShortBuffer().get(shorts);
+        int[] r = new int[shorts.length];
+        for (int i = 0; i < shorts.length; i++) {
+            r[i] = shorts[i] & 0xFFFF;
+        }
+        return r;
+    }
 }

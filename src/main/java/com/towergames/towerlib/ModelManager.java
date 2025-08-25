@@ -1,5 +1,6 @@
 package com.towergames.towerlib;
 
+import com.sun.org.apache.xml.internal.utils.IntVector;
 import de.javagl.jgltf.model.*;
 import de.javagl.jgltf.model.image.PixelData;
 import de.javagl.jgltf.model.image.PixelDatas;
@@ -199,14 +200,18 @@ public class ModelManager {
 
         public class Primitive {
             private final NodeModel node;
-            private final MeshPrimitiveModel primitive;
+            private final MaterialModelV2 material;
             private final GLHandler.VAO vao;
 
             private Primitive(NodeModel node, MeshPrimitiveModel primitive) {
                 this.node = node;
-                this.primitive = primitive;
+                MaterialModel materialModel = primitive.getMaterialModel();
+                material = materialModel == null ? new MaterialModelV2() : (MaterialModelV2) materialModel;
                 GLHandler gl = game.getGlHandler();
                 vao = gl.createVAO();
+                if (primitive.getMode() != GL11.GL_TRIANGLES) {
+                    throw new RuntimeException("Failed to create primitive: Render mode MUST be triangles");
+                }
                 if (primitive.getAttributes().get("TANGENT") == null) {
                     throw new RuntimeException("Failed to create primitive: No tangent");
                 }
@@ -221,6 +226,25 @@ public class ModelManager {
                             vao.vertexAttrib(getAttributeIndex(e.getKey()), m.getElementSizeInBytes() / m.getComponentSizeInBytes(), m.getComponentType(), 0, buffer.position());
                             buffer.put(m.getBufferViewModel().getBufferViewData());
                         });
+
+                float[] positions = new float[count * 3];
+                primitive.getAttributes().get("POSITION").getBufferViewModel().getBufferViewData().asFloatBuffer().get(positions);
+                float[] texcoords = new float[count * 2];
+                primitive.getAttributes().get("TEXCOORD_0").getBufferViewModel().getBufferViewData().asFloatBuffer().get(texcoords);
+                int[] indices;
+                switch (primitive.getIndices().getComponentType()) {
+                    case GL11.GL_UNSIGNED_INT:
+                        indices = new int[primitive.getIndices().getCount()];
+                        primitive.getIndices().getBufferViewModel().getBufferViewData().asIntBuffer().get(indices);
+                        break;
+                    case GL11.GL_UNSIGNED_SHORT:
+                        indices = TowerUtil.readUnsignedShortsToIntArray(primitive.getIndices().getBufferViewModel().getBufferViewData());
+                        break;
+                    default:
+                        throw new RuntimeException("Unexpected indices type: " + primitive.getIndices().getComponentType());
+                }
+                float[][] data = catmullClark(positions, texcoords, indices);
+
                 game.getLogger().debug("targets: {}", primitive.getTargets());
                 int targetSize = primitive.getTargets().size();
                 if (targetSize > 3) {
@@ -236,8 +260,8 @@ public class ModelManager {
                 }
                 buffer.flip();
 
-                AccessorModel indices = primitive.getIndices();
-                vao.vboData(buffer).eboData(indices.getAccessorData().createByteBuffer(), GL15.GL_STATIC_DRAW, indices.getComponentType());
+                AccessorModel indicesModel = primitive.getIndices();
+                vao.vboData(buffer).eboData(indicesModel.getAccessorData().createByteBuffer(), GL15.GL_STATIC_DRAW, indicesModel.getComponentType());
             }
 
             public void doRender(boolean renderDepth) {
@@ -250,11 +274,7 @@ public class ModelManager {
                     }
                 }
                 weights = new float[]{weights.length > 0 ? weights[0] : 0, weights.length > 1 ? weights[1] : 0, weights.length > 2 ? weights[2] : 0};
-                game.getLogger().debug("weights: {}", weights);
-                MaterialModelV2 material = (MaterialModelV2) primitive.getMaterialModel();
-                if (material == null) {
-                    material = new MaterialModelV2();
-                }
+
                 gl.getState().texture0(loadTexture(material.getBaseColorTexture(), true, true, gl.white))
                         .texture1(loadTexture(material.getMetallicRoughnessTexture(), false, true, gl.white))
                         .texture2(loadTexture(material.getNormalTexture(), false, true, gl.defaultNormal))
@@ -267,6 +287,209 @@ public class ModelManager {
                         .uniform("uOcclusionStrength", material.getOcclusionStrength()).uniform3f("uEmissiveFactor", material.getEmissiveFactor())
                         .uniform3f("uMorphWeights", weights).lights(gl.createLight(TowerUtil.getDirection(-20f, 40), new Vector3f(1.0f, 1.0f, 1.0f)));
                 vao.drawElements();
+            }
+
+            private float[][] catmullClark(float[] positions, float[] texcoords, int[] indices) {
+                game.getLogger().debug("positions: {}", positions);
+                game.getLogger().debug("texcoords: {}", texcoords);
+                game.getLogger().debug("indices: {}", indices);
+                int originPointsCount = positions.length / 3;
+                int originFacesCount = indices.length / 3;
+                int[] pointToOriginPoint = new int[originPointsCount];
+                int[] originPointToPoint = new int[originPointsCount];
+                int pointsCount = 0;
+                for (int i = 0; i < originPointsCount; i++) {
+                    float x = positions[i * 3];
+                    float y = positions[i * 3 + 1];
+                    float z = positions[i * 3 + 2];
+                    float u = texcoords[i * 2];
+                    float v = texcoords[i * 2 + 1];
+                    boolean flag = false;
+                    for (int j = 0; j < pointsCount; j++) {
+                        int index = pointToOriginPoint[j];
+                        if (x == positions[index * 3] && y == positions[index * 3 + 1] && z == positions[index * 3 + 2]
+                                && u == texcoords[index * 2] && v == texcoords[index * 2 + 1]) {
+                            originPointToPoint[i] = j;
+                            flag = true;
+                            break;
+                        }
+                    }
+                    if (!flag) {
+                        pointToOriginPoint[pointsCount] = i;
+                        originPointToPoint[i] = pointsCount;
+                        pointsCount++;
+                    }
+                }
+                float[] facePoints = new float[originFacesCount * 3];
+                int[] edges = new int[originFacesCount * 3 * 4]; // 2 points index + 2 near faces index = 4
+                int[] faceToEdges = new int[originFacesCount * 3];
+                List<Integer>[] pointToEdges = new List[pointsCount];
+                List<Integer>[] pointToFaces = new List[pointsCount];
+                int edgesCount = 0;
+                for (int i = 0; i < originFacesCount; i++) {
+                    facePoints[i * 3] = (positions[indices[i * 3] * 3] + positions[indices[i * 3 + 1] * 3] + positions[indices[i * 3 + 2] * 3]) / 3f;
+                    facePoints[i * 3 + 1] = (positions[indices[i * 3] * 3 + 1] + positions[indices[i * 3 + 1] * 3 + 1] + positions[indices[i * 3 + 2] * 3 + 1]) / 3f;
+                    facePoints[i * 3 + 2] = (positions[indices[i * 3] * 3 + 2] + positions[indices[i * 3 + 1] * 3 + 2] + positions[indices[i * 3 + 2] * 3 + 2]) / 3f;
+                    int pointA = originPointToPoint[indices[i * 3]];
+                    int pointB = originPointToPoint[indices[i * 3 + 1]];
+                    int pointC = originPointToPoint[indices[i * 3 + 2]];
+                    List<Integer> pointAToFaces = pointToFaces[pointA];
+                    List<Integer> pointBToFaces = pointToFaces[pointB];
+                    List<Integer> pointCToFaces = pointToFaces[pointC];
+                    if (pointAToFaces == null) {
+                        pointAToFaces = new ArrayList<>();
+                        pointToFaces[pointA] = pointAToFaces;
+                    }
+                    if (pointBToFaces == null) {
+                        pointBToFaces = new ArrayList<>();
+                        pointToFaces[pointB] = pointBToFaces;
+                    }
+                    if (pointCToFaces == null) {
+                        pointCToFaces = new ArrayList<>();
+                        pointToFaces[pointC] = pointCToFaces;
+                    }
+                    pointAToFaces.add(i);
+                    pointBToFaces.add(i);
+                    pointCToFaces.add(i);
+                    List<Integer> pointAToEdges = pointToEdges[pointA];
+                    List<Integer> pointBToEdges = pointToEdges[pointB];
+                    List<Integer> pointCToEdges = pointToEdges[pointC];
+                    boolean flagAB = false, flagAC = false, flagBC = false;
+                    if (pointAToEdges == null) {
+                        pointAToEdges = new ArrayList<>();
+                        pointToEdges[pointA] = pointAToEdges;
+                    }
+                    if (pointBToEdges == null) {
+                        pointBToEdges = new ArrayList<>();
+                        pointToEdges[pointB] = pointBToEdges;
+                    }
+                    if (pointCToEdges == null) {
+                        pointCToEdges = new ArrayList<>();
+                        pointToEdges[pointC] = pointCToEdges;
+                    }
+                    for (int j = 0; j < pointAToEdges.size(); j++) {
+                        int edge = pointAToEdges.get(j);
+                        if (edges[edge * 4] == pointB || edges[edge * 4 + 1] == pointB) {
+                            flagAB = true;
+                            edges[edge * 4 + 3] = i;
+                            faceToEdges[i * 3] = edge;
+                        }
+                        if (edges[edge * 4] == pointC || edges[edge * 4 + 1] == pointC) {
+                            flagAC = true;
+                            edges[edge * 4 + 3] = i;
+                            faceToEdges[i * 3 + 1] = edge;
+                        }
+                    }
+                    for (int j = 0; j < pointBToEdges.size(); j++) {
+                        int edge = pointBToEdges.get(j);
+                        if (edges[edge * 4] == pointC || edges[edge * 4 + 1] == pointC) {
+                            flagBC = true;
+                            edges[edge * 4 + 3] = i;
+                            faceToEdges[i * 3 + 2] = edge;
+                        }
+                    }
+                    if (!flagAB) {
+                        edges[edgesCount * 4] = pointA;
+                        edges[edgesCount * 4 + 1] = pointB;
+                        edges[edgesCount * 4 + 2] = i;
+                        edges[edgesCount * 4 + 3] = -1;
+                        pointAToEdges.add(edgesCount);
+                        pointBToEdges.add(edgesCount);
+                        faceToEdges[i * 3] = edgesCount;
+                        edgesCount++;
+                    }
+                    if (!flagAC) {
+                        edges[edgesCount * 4] = pointA;
+                        edges[edgesCount * 4 + 1] = pointC;
+                        edges[edgesCount * 4 + 2] = i;
+                        edges[edgesCount * 4 + 3] = -1;
+                        pointAToEdges.add(edgesCount);
+                        pointCToEdges.add(edgesCount);
+                        faceToEdges[i * 3 + 1] = edgesCount;
+                        edgesCount++;
+                    }
+                    if (!flagBC) {
+                        edges[edgesCount * 4] = pointB;
+                        edges[edgesCount * 4 + 1] = pointC;
+                        edges[edgesCount * 4 + 2] = i;
+                        edges[edgesCount * 4 + 3] = -1;
+                        pointBToEdges.add(edgesCount);
+                        pointCToEdges.add(edgesCount);
+                        faceToEdges[i * 3 + 2] = edgesCount;
+                        edgesCount++;
+                    }
+                }
+                float[] edgePoints = new float[edgesCount * 3];
+                float[] edgeCenter = new float[edgesCount * 3];
+                for (int i = 0; i < edgesCount; i++) {
+                    int originPointA = pointToOriginPoint[edges[i * 4]];
+                    int originPointB = pointToOriginPoint[edges[i * 4 + 1]];
+                    edgeCenter[i * 3] = (positions[originPointA * 3] + positions[originPointB * 3]) / 2;
+                    edgeCenter[i * 3 + 1] = (positions[originPointA * 3 + 1] + positions[originPointB * 3 + 1]) / 2;
+                    edgeCenter[i * 3 + 2] = (positions[originPointA * 3 + 2] + positions[originPointB * 3 + 2]) / 2;
+                    if (edges[i * 4 + 3] == -1) {
+                        edgePoints[i * 3] = edgeCenter[i * 3];
+                        edgePoints[i * 3 + 1] = edgeCenter[i * 3 + 1];
+                        edgePoints[i * 3 + 2] = edgeCenter[i * 3 + 2];
+                    } else {
+                        edgePoints[i * 3] = (edgeCenter[i * 3] * 2 + facePoints[edges[i * 4 + 2] * 3] + facePoints[edges[i * 4 + 3] * 3]) / 4;
+                        edgePoints[i * 3 + 1] = (edgeCenter[i * 3 + 1] * 2 + facePoints[edges[i * 4 + 2] * 3 + 1] + facePoints[edges[i * 4 + 3] * 3 + 1]) / 4;
+                        edgePoints[i * 3 + 2] = (edgeCenter[i * 3 + 2] * 2 + facePoints[edges[i * 4 + 2] * 3 + 2] + facePoints[edges[i * 4 + 3] * 3 + 2]) / 4;
+                    }
+                }
+                float[] newPoints = new float[originPointsCount * 3];
+                for (int i = 0; i < originPointsCount; i++) {
+                    int point = originPointToPoint[i];
+                    int n = pointToEdges[point].size();
+                    List<Integer> faces = pointToFaces[point];
+                    float qX = 0.0f, qY = 0.0f, qZ = 0.0f;
+                    for (int face : faces) {
+                        qX += facePoints[face * 3];
+                        qY += facePoints[face * 3 + 1];
+                        qZ += facePoints[face * 3 + 2];
+                    }
+                    qX /= faces.size();
+                    qY /= faces.size();
+                    qZ /= faces.size();
+                    float rX = 0.0f, rY = 0.0f, rZ = 0.0f;
+                    for (int edge : pointToEdges[point]) {
+                        rX += edgeCenter[edge * 3];
+                        rY += edgeCenter[edge * 3 + 1];
+                        rZ += edgeCenter[edge * 3 + 2];
+                    }
+                    rX /= n;
+                    rY /= n;
+                    rZ /= n;
+                    newPoints[i * 3] = (qX + 2 * rX + (n - 3) * positions[i * 3]) / n;
+                    newPoints[i * 3 + 1] = (qY + 2 * rY + (n - 3) * positions[i * 3 + 1]) / n;
+                    newPoints[i * 3 + 2] = (qZ + 2 * rZ + (n - 3) * positions[i * 3 + 2]) / n;
+                }
+                float[] newPositions = new float[facePoints.length + edgePoints.length + newPoints.length];
+                System.arraycopy(facePoints, 0, newPositions, 0, facePoints.length);
+                System.arraycopy(edgePoints, 0, newPositions, facePoints.length, edgePoints.length);
+                System.arraycopy(newPoints, 0, newPositions, facePoints.length + edgePoints.length, newPoints.length);
+                int[] newIndices = new int[originFacesCount * 3 * 6];
+                for (int i = 0; i < indices.length; i++) {
+                    int face = i / 3;
+                    int point = originPointToPoint[indices[i]];
+                    int pointA = originFacesCount + edgesCount + indices[i];
+                    int pointB = 0, pointC = 0;
+                    for (int j = 0; j < 3; j++) {
+                        int edge = faceToEdges[face * 3 + j];
+                        if (edges[edge * 4] == point || edges[edge * 4 + 1] == point) {
+                            if (pointB == 0) {
+                                pointB = originFacesCount + edge;
+                            } else {
+                                pointC = originFacesCount + edge;
+                            }
+                        }
+                    }
+                    int pointD = face;
+                }
+
+
+                float[] newTexcoords = new float[0];
+                return new float[][]{newPositions, newTexcoords};
             }
 
             private int getAttributeIndex(String attribute) {
