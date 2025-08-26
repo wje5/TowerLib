@@ -15,6 +15,9 @@ public class TowerLibDemo extends TowerGame {
     private FontManager.Font testFont;
     private GLHandler.Texture texture;
     private boolean scene3D;
+    private float cameraPitch = -45f;
+    private float cameraYaw = 45.0f;
+    private KeyBindingManager.KeyBinding keyFullscreen, keyExit, keySwitchScene, keyPitchUp, keyPitchDown, keyTurnLeft, keyTurnRight;
 
     @Override
     protected void preInit() {
@@ -34,24 +37,28 @@ public class TowerLibDemo extends TowerGame {
     protected void postInit() {
         super.postInit();
         WindowHandler window = getWindowHandler();
-        getKeyBindingManager().registerKeyBinding(new KeyBindingManager.KeyBinding("fullscreen", GLFW.GLFW_KEY_K, 0, true) {
+        getKeyBindingManager().registerKeyBinding(keyFullscreen = new KeyBindingManager.KeyBinding("fullscreen", GLFW.GLFW_KEY_K, 0, true) {
             @Override
             protected void onPress() {
                 window.setFullscreen(!window.isFullscreen());
             }
         });
-        getKeyBindingManager().registerKeyBinding(new KeyBindingManager.KeyBinding("exit", GLFW.GLFW_KEY_ESCAPE, 0, false) {
+        getKeyBindingManager().registerKeyBinding(keyExit = new KeyBindingManager.KeyBinding("exit", GLFW.GLFW_KEY_ESCAPE, 0, false) {
             @Override
             protected void onPress() {
                 window.closeWindow();
             }
         });
-        getKeyBindingManager().registerKeyBinding(new KeyBindingManager.KeyBinding("switchScene", GLFW.GLFW_KEY_M, 0, true) {
+        getKeyBindingManager().registerKeyBinding(keySwitchScene = new KeyBindingManager.KeyBinding("switchScene", GLFW.GLFW_KEY_M, 0, true) {
             @Override
             protected void onPress() {
                 scene3D = !scene3D;
             }
         });
+        getKeyBindingManager().registerKeyBinding(keyPitchUp = new KeyBindingManager.KeyBinding("pitchUp", GLFW.GLFW_KEY_W, 0, true));
+        getKeyBindingManager().registerKeyBinding(keyPitchDown = new KeyBindingManager.KeyBinding("pitchDown", GLFW.GLFW_KEY_S, 0, true));
+        getKeyBindingManager().registerKeyBinding(keyTurnLeft = new KeyBindingManager.KeyBinding("turnLeft", GLFW.GLFW_KEY_A, 0, true));
+        getKeyBindingManager().registerKeyBinding(keyTurnRight = new KeyBindingManager.KeyBinding("turnRight", GLFW.GLFW_KEY_D, 0, true));
     }
 
     @Override
@@ -67,12 +74,24 @@ public class TowerLibDemo extends TowerGame {
         gl.clearDepth();
         gl.getState().cullFace(false).depthTest(true).blend(true).blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         if (scene3D) {
-            Vector3f cameraPos = new Vector3f(0.0f, 10.0f, 10.0f);
-            float cameraPitch = -45f;
-            float cameraYaw = 0.0f;
+            float rotationSpeed = 0.05f;
+            if(keyPitchUp.isPressed()){
+                cameraPitch += rotationSpeed;
+            }
+            if(keyPitchDown.isPressed()){
+                cameraPitch -= rotationSpeed;
+            }
+            if(keyTurnLeft.isPressed()){
+                cameraYaw += rotationSpeed;
+            }
+            if(keyTurnRight.isPressed()){
+                cameraYaw -= rotationSpeed;
+            }
+            Vector3f cameraFront = TowerUtil.getDirection(cameraPitch, cameraYaw);
+            Vector3f cameraPos = new Vector3f(cameraFront).negate().mul(10f);
             float scale = 0.01f;
             gl.getState().model(new Matrix4f())
-                    .view(new Matrix4f().lookAt(cameraPos, new Vector3f(cameraPos).add(TowerUtil.getDirection(cameraPitch, cameraYaw)), new Vector3f(0.0f, 1.0f, 0.0f)))
+                    .view(new Matrix4f().lookAt(cameraPos, new Vector3f(cameraPos).add(cameraFront), new Vector3f(0.0f, 1.0f, 0.0f)))
                     .projection(new Matrix4f().ortho(window.getWidth() * -0.5f * scale, window.getWidth() * 0.5f * scale,
                             window.getHeight() * -0.5f * scale, window.getHeight() * 0.5f * scale, 0.1f, 10000f));
             gl.getState().depthTest(true).texture0(texture);
@@ -90,9 +109,11 @@ public class TowerLibDemo extends TowerGame {
             gl.getState().model.scale(1f);
             gl.getState().applyMVP();
             Map<String, Float> animations = new HashMap<>();
-            animations.put("KeyAction", game.getSecFromStart() % 3f);
+//            animations.put("KeyAction", game.getSecFromStart() % 3f);
             getModelManager().loadModel("models/cubetest_key.glb").doRender(false, animations);
-//            getModelManager().loadModel("models/maiden_test_3.glb").doRender(false);
+//            getModelManager().loadModel("models/maiden_test_3.glb").doRender(false,null);
+//            getModelManager().loadModel("models/face.glb").doRender(false,null);
+//            getModelManager().loadModel("models/4faces.glb").doRender(false, null);
             gl.getState().popMVP();
         } else {
             gl.drawRect2D(0, 0, 100, 100, TowerUtil.color(0xFFABCDEF));

@@ -30,6 +30,11 @@ public class TowerUtil {
         return new Vector4f(r, g, b, a);
     }
 
+    public static boolean isEquals(float a, float b) {
+        float eps = 0.000001f;
+        return Math.abs(a - b) < eps;
+    }
+
     public static Vector3f getDirection(float pitch, float yaw) {
         return new Vector3f(org.joml.Math.sin(org.joml.Math.toRadians(yaw)) * org.joml.Math.cos(org.joml.Math.toRadians(-pitch)),
                 org.joml.Math.sin(org.joml.Math.toRadians(pitch)),

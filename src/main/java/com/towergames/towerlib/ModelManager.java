@@ -1,6 +1,5 @@
 package com.towergames.towerlib;
 
-import com.sun.org.apache.xml.internal.utils.IntVector;
 import de.javagl.jgltf.model.*;
 import de.javagl.jgltf.model.image.PixelData;
 import de.javagl.jgltf.model.image.PixelDatas;
@@ -213,7 +212,7 @@ public class ModelManager {
                     throw new RuntimeException("Failed to create primitive: Render mode MUST be triangles");
                 }
                 if (primitive.getAttributes().get("TANGENT") == null) {
-                    throw new RuntimeException("Failed to create primitive: No tangent");
+//                    throw new RuntimeException("Failed to create primitive: No tangent");
                 }
                 int count = primitive.getAttributes().get("POSITION").getCount();
                 int size = primitive.getAttributes().values().stream().mapToInt(AccessorModel::getElementSizeInBytes).sum() * count;
@@ -243,7 +242,8 @@ public class ModelManager {
                     default:
                         throw new RuntimeException("Unexpected indices type: " + primitive.getIndices().getComponentType());
                 }
-                float[][] data = catmullClark(positions, texcoords, indices);
+
+                MeshData data = catmullClark(positions, texcoords, indices);
 
                 game.getLogger().debug("targets: {}", primitive.getTargets());
                 int targetSize = primitive.getTargets().size();
@@ -262,6 +262,8 @@ public class ModelManager {
 
                 AccessorModel indicesModel = primitive.getIndices();
                 vao.vboData(buffer).eboData(indicesModel.getAccessorData().createByteBuffer(), GL15.GL_STATIC_DRAW, indicesModel.getComponentType());
+
+                vao.vboData(data.positions).eboData(data.indices).vertexAttrib(0, 3, 0, 0);
             }
 
             public void doRender(boolean renderDepth) {
@@ -289,15 +291,17 @@ public class ModelManager {
                 vao.drawElements();
             }
 
-            private float[][] catmullClark(float[] positions, float[] texcoords, int[] indices) {
-                game.getLogger().debug("positions: {}", positions);
-                game.getLogger().debug("texcoords: {}", texcoords);
-                game.getLogger().debug("indices: {}", indices);
+            @SuppressWarnings("unchecked")
+            private MeshData catmullClark(float[] positions, float[] texcoords, int[] indices) {
+//                game.getLogger().debug("positions: {}", positions);
+//                game.getLogger().debug("texcoords: {}", texcoords);
+//                game.getLogger().debug("indices: {}", indices);
                 int originPointsCount = positions.length / 3;
                 int originFacesCount = indices.length / 3;
                 int[] pointToOriginPoint = new int[originPointsCount];
                 int[] originPointToPoint = new int[originPointsCount];
                 int pointsCount = 0;
+                float eps = 0.000001f;
                 for (int i = 0; i < originPointsCount; i++) {
                     float x = positions[i * 3];
                     float y = positions[i * 3 + 1];
@@ -307,8 +311,7 @@ public class ModelManager {
                     boolean flag = false;
                     for (int j = 0; j < pointsCount; j++) {
                         int index = pointToOriginPoint[j];
-                        if (x == positions[index * 3] && y == positions[index * 3 + 1] && z == positions[index * 3 + 2]
-                                && u == texcoords[index * 2] && v == texcoords[index * 2 + 1]) {
+                        if (TowerUtil.isEquals(x, positions[index * 3]) && TowerUtil.isEquals(y, positions[index * 3 + 1]) && TowerUtil.isEquals(z, positions[index * 3 + 2]) ) {
                             originPointToPoint[i] = j;
                             flag = true;
                             break;
@@ -442,6 +445,29 @@ public class ModelManager {
                     int point = originPointToPoint[i];
                     int n = pointToEdges[point].size();
                     List<Integer> faces = pointToFaces[point];
+                    if (faces.size() < n) {
+                        int pointA = -1, pointB = -1;
+                        for (int edge : pointToEdges[point]) {
+                            if (edges[edge * 4 + 3] == -1) {
+                                int p;
+                                if (edges[edge * 4] == point) {
+                                    p = edges[edge * 4 + 1];
+                                } else {
+                                    p = edges[edge * 4];
+                                }
+                                if (pointA == -1) {
+                                    pointA = p;
+                                } else {
+                                    pointB = p;
+                                }
+                            }
+                        }
+                        newPoints[i * 3] = (positions[i * 3] * 6 + positions[pointA * 3] + positions[pointB * 3]) / 8;
+                        newPoints[i * 3 + 1] = (positions[i * 3 + 1] * 6 + positions[pointA * 3 + 1] + positions[pointB * 3 + 1]) / 8;
+                        newPoints[i * 3 + 2] = (positions[i * 3 + 2] * 6 + positions[pointA * 3 + 2] + positions[pointB * 3 + 2]) / 8;
+                        continue;
+                    }
+
                     float qX = 0.0f, qY = 0.0f, qZ = 0.0f;
                     for (int face : faces) {
                         qX += facePoints[face * 3];
@@ -485,11 +511,18 @@ public class ModelManager {
                         }
                     }
                     int pointD = face;
+                    newIndices[i * 6] = pointA;
+                    newIndices[i * 6 + 1] = pointC;
+                    newIndices[i * 6 + 2] = pointB;
+                    newIndices[i * 6 + 3] = pointC;
+                    newIndices[i * 6 + 4] = pointD;
+                    newIndices[i * 6 + 5] = pointB;
                 }
 
-
                 float[] newTexcoords = new float[0];
-                return new float[][]{newPositions, newTexcoords};
+//                game.getLogger().debug("new positions: {}", newPositions);
+//                game.getLogger().debug("new indices: {}", newIndices);
+                return new MeshData(newPositions, newIndices);
             }
 
             private int getAttributeIndex(String attribute) {
@@ -510,6 +543,16 @@ public class ModelManager {
                         return 6;
                     default:
                         return -1;
+                }
+            }
+
+            public class MeshData {
+                private final float[] positions;
+                private final int[] indices;
+
+                private MeshData(float[] positions, int[] indices) {
+                    this.positions = positions;
+                    this.indices = indices;
                 }
             }
         }
