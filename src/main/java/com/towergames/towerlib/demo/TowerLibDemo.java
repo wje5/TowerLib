@@ -110,10 +110,12 @@ public class TowerLibDemo extends TowerGame {
             gl.getState().applyMVP();
             Map<String, Float> animations = new HashMap<>();
 //            animations.put("KeyAction", game.getSecFromStart() % 3f);
-            getModelManager().loadModel("models/cubetest_key.glb").doRender(false, animations);
+//            getModelManager().loadModel("models/cubetest_key.glb").doRender(false, animations);
 //            getModelManager().loadModel("models/maiden_test_3.glb").doRender(false,null);
 //            getModelManager().loadModel("models/face.glb").doRender(false,null);
 //            getModelManager().loadModel("models/4faces.glb").doRender(false, null);
+            getModelManager().loadModel("models/illstrate_3.glb").doRender(false, null);
+//            getModelManager().loadModel("models/cube2.glb").doRender(false,null);
             gl.getState().popMVP();
         } else {
             gl.drawRect2D(0, 0, 100, 100, TowerUtil.color(0xFFABCDEF));
