@@ -7,6 +7,7 @@ import de.javagl.jgltf.model.io.GltfModelReader;
 import de.javagl.jgltf.model.v2.MaterialModelV2;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL21;
@@ -53,6 +54,9 @@ public class ModelManager {
         PixelData data = PixelDatas.create(model.getImageModel().getImageData());
         GLHandler.Texture texture = game.getGlHandler().createTexture(mipmap).image(srgb ? GL21.GL_SRGB_ALPHA : GL11.GL_RGBA,
                 data.getWidth(), data.getHeight(), GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, data.getPixelsRGBA());
+        if (mipmap) {
+            texture.updateMipmap();
+        }
         textures.put(model, texture);
         return texture;
     }
@@ -270,6 +274,12 @@ public class ModelManager {
 
             public void doRender(boolean renderDepth) {
                 GLHandler gl = game.getGlHandler();
+                if (1 == 2) {
+                    gl.getState().texture0(loadTexture(material.getBaseColorTexture(), true, true, gl.white));
+                    gl.basic.uniform("uColor", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)).uniform("uTexture", 0);
+                    vao.drawElements();
+                    return;
+                }
                 float[] weights = node.getWeights();
                 if (weights == null) {
                     weights = node.getMeshModels().get(0).getWeights();
@@ -558,13 +568,14 @@ public class ModelManager {
                 for (int i = 0; i < indices.length; i++) {
                     int face = i / 3;
                     int point = originPointToPoint[indices[i]];
+                    int nextPoint = originPointToPoint[indices[face * 3 + (i + 1) % 3]];
                     int pointA = originFacesCount + edgePointsCount + indices[i];
                     int pointB = 0, pointC = 0;
                     for (int j = 0; j < 3; j++) {
                         int edge = faceToEdges[face * 3 + j];
                         if (edges[edge * 10] == point || edges[edge * 10 + 1] == point) {
                             int edgePointIndex = edges[edge * 10 + 2] == face ? edges[edge * 10 + 4] : edges[edge * 10 + 5];
-                            if (pointB == 0) {
+                            if (edges[edge * 10] == nextPoint || edges[edge * 10 + 1] == nextPoint) {
                                 pointB = originFacesCount + edgePointIndex;
                             } else {
                                 pointC = originFacesCount + edgePointIndex;
@@ -573,14 +584,14 @@ public class ModelManager {
                     }
                     int pointD = face;
                     newIndices[i * 6] = pointA;
-                    newIndices[i * 6 + 1] = pointC;
-                    newIndices[i * 6 + 2] = pointB;
-                    newIndices[i * 6 + 3] = pointC;
+                    newIndices[i * 6 + 1] = pointB;
+                    newIndices[i * 6 + 2] = pointD;
+                    newIndices[i * 6 + 3] = pointA;
                     newIndices[i * 6 + 4] = pointD;
-                    newIndices[i * 6 + 5] = pointB;
+                    newIndices[i * 6 + 5] = pointC;
                 }
 //                game.getLogger().debug("new indices: {}", newIndices);
-                game.getLogger().debug("{}/{}-{}/{}",facePoints.length / 5f,edgePointsCount,edgesCount,newPoints.length / 5f);
+                game.getLogger().debug("{}/{}-{}/{}", facePoints.length / 5f, edgePointsCount, edgesCount, newPoints.length / 5f);
                 return new MeshData(verticesData, newIndices, verticesData.length / 5);
 
 //                verticesData = new float[positions.length + texcoords.length];

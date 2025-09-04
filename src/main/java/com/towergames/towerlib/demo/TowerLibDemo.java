@@ -72,7 +72,7 @@ public class TowerLibDemo extends TowerGame {
 //        gl.getState().clearColor(new Vector4f(f, f, 0.7f, 1.0f));
         gl.clearColor();
         gl.clearDepth();
-        gl.getState().cullFace(false).depthTest(true).blend(true).blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        gl.getState().cullFace(true).depthTest(true).blend(true).blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         if (scene3D) {
             float rotationSpeed = 0.05f;
             if(keyPitchUp.isPressed()){
@@ -104,7 +104,7 @@ public class TowerLibDemo extends TowerGame {
             gl.getState().popMVP();
 
             testFont.renderText(0, 100, 48, 0, TowerUtil.color(0xFFFFFFFF), "FPS: " + game.getFPS(), "K to switch fullscreen", "Esc to quit", "M to 2D scene");
-            gl.getState().depthTest(false).cullFace(false);
+            gl.getState().depthTest(true).cullFace(true);
             gl.getState().pushMVP();
             gl.getState().model.scale(1f);
             gl.getState().applyMVP();
@@ -114,8 +114,10 @@ public class TowerLibDemo extends TowerGame {
 //            getModelManager().loadModel("models/maiden_test_3.glb").doRender(false,null);
 //            getModelManager().loadModel("models/face.glb").doRender(false,null);
 //            getModelManager().loadModel("models/4faces.glb").doRender(false, null);
-            getModelManager().loadModel("models/illstrate_3.glb").doRender(false, null);
+//            getModelManager().loadModel("models/illstrate_3.glb").doRender(false, null);
 //            getModelManager().loadModel("models/cube2.glb").doRender(false,null);
+//            getModelManager().loadModel("models/numbertest.glb").doRender(false,null);
+            getModelManager().loadModel("models/cubeUV.glb").doRender(false,null);
             gl.getState().popMVP();
         } else {
             gl.drawRect2D(0, 0, 100, 100, TowerUtil.color(0xFFABCDEF));

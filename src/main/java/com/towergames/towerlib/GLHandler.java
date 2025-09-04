@@ -129,6 +129,9 @@ public class GLHandler {
         PixelData data = PixelDatas.create(TowerUtil.readToBuffer(path));
         getState().unpackAlignment(4);
         Texture texture = createTexture(mipmap).image(srgb ? GL21.GL_SRGB_ALPHA : GL11.GL_RGBA, data.getWidth(), data.getHeight(), GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, data.getPixelsRGBA());
+        if (mipmap) {
+            texture.updateMipmap();
+        }
         textures.put(path, texture);
         return texture;
     }

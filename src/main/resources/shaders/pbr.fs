@@ -147,4 +147,5 @@ void main() {
     color = color / (color + vec3(1.0));
 
     fragColor = vec4(color, baseColor.a);
+    fragColor = baseColor;
 }
